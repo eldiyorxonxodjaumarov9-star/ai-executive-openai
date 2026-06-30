@@ -16,7 +16,7 @@ from app.brains.loader import BRAIN_LOAD_ORDER, get_brain_stats
 from app.config import VALID_AGENTS, get_settings
 from app.middleware.connector_auth import ConnectorSecretMiddleware
 from app.mcp.tools import get_mcp_tool_catalog
-from app.routers import claude_connector, claude_tools
+from app.routers import claude_connector, claude_tools, mcp_remote
 from app.scheduler.jobs import shutdown_scheduler, start_scheduler
 from app.services.bitrix import Bitrix24Error, Bitrix24Service
 from app.services.bitrix_test import BitrixTestService
@@ -57,6 +57,7 @@ app = FastAPI(
 app.add_middleware(ConnectorSecretMiddleware)
 app.include_router(claude_tools.router)
 app.include_router(claude_connector.router)
+app.include_router(mcp_remote.router)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 if PUBLIC_DIR.is_dir():
     app.mount("/public", StaticFiles(directory=PUBLIC_DIR), name="public")
@@ -238,7 +239,15 @@ async def bitrix_webhook(request: Request) -> dict[str, Any]:
 @app.post("/telegram/send-test", tags=["Telegram"])
 async def telegram_send_test(body: TelegramTestRequest) -> dict[str, Any]:
     """Send a test message to the configured Telegram chat."""
-    telegram = TelegramService()
+    settings = get_settings()
+    if not settings.telegram_enabled:
+        return {
+            "success": False,
+            "error": "telegram_disabled",
+            "message": "Telegram is not configured. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID (both optional).",
+        }
+
+    telegram = TelegramService(settings)
     responses = await telegram.send_message(body.message)
     return {
         "success": True,

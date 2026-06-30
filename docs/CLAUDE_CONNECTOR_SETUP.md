@@ -14,10 +14,16 @@ Claude will call your platform tools and return live Bitrix24-based executive an
 
 Claude.ai runs in Anthropic's cloud. It **cannot** call `localhost` or private networks.
 
-You must deploy the FastAPI app to a public HTTPS URL, for example:
+You must deploy the FastAPI app to a public HTTPS URL:
 
 ```
-https://YOUR-APP.onrender.com
+https://ai-executive-platform-1.onrender.com
+```
+
+**Production Remote MCP URL (Claude.ai Custom Connector):**
+
+```
+https://ai-executive-platform-1.onrender.com/mcp
 ```
 
 ### 2. Local development
@@ -33,15 +39,15 @@ These work locally for testing the API, but **Claude.ai cannot use them** until 
 Set your production base URL in Render environment variables:
 
 ```
-PUBLIC_BASE_URL=https://YOUR-APP.onrender.com
+PUBLIC_BASE_URL=https://ai-executive-platform-1.onrender.com
 ```
 
 Then verify:
 
 ```bash
-curl https://YOUR-APP.onrender.com/claude/health
-curl https://YOUR-APP.onrender.com/claude/manifest
-curl https://YOUR-APP.onrender.com/claude/instructions
+curl https://ai-executive-platform-1.onrender.com/mcp/health
+curl https://ai-executive-platform-1.onrender.com/claude/health
+curl https://ai-executive-platform-1.onrender.com/claude/manifest
 ```
 
 ---
@@ -72,10 +78,12 @@ Agent tools accept JSON body:
 
 | Endpoint | Purpose |
 |----------|---------|
-| `GET /claude/health` | Connector health (no secret required) |
-| `GET /claude/manifest` | Tool manifest for Claude connector |
+| `POST /mcp` | **Remote MCP JSON-RPC** (Claude.ai Custom Connector) |
+| `GET /mcp/health` | MCP health (no secret required) |
+| `GET /claude/health` | Legacy connector health |
+| `GET /claude/manifest` | Legacy HTTP tool manifest |
 | `GET /claude/instructions` | Instructions Claude should follow |
-| `GET /public/claude-tools.json` | Static manifest file (replace YOUR-APP URL) |
+| `GET /public/claude-tools.json` | Static manifest file |
 
 ---
 
@@ -95,8 +103,11 @@ X-Connector-Secret: your-long-random-secret
 
 Protected routes:
 
+- `POST /mcp`
 - `/tools/*`
 - `/claude/*` except `/claude/health`
+
+`/mcp/health` does not require the secret.
 
 If `CONNECTOR_SECRET` is empty, local development works without the header.
 
@@ -111,53 +122,37 @@ If `CONNECTOR_SECRET` is empty, local development works without the header.
 3. Set environment variables:
    - `BITRIX24_WEBHOOK_URL`
    - `ANTHROPIC_API_KEY`
-   - `TELEGRAM_BOT_TOKEN`
-   - `TELEGRAM_CHAT_ID`
    - `PUBLIC_BASE_URL=https://YOUR-APP.onrender.com`
    - `CONNECTOR_SECRET` (recommended)
 4. Deploy and open `https://YOUR-APP.onrender.com/health`.
 
 ---
 
-## Connect Claude.ai
+## Connect Claude.ai (Remote MCP — recommended)
 
-### Step 1 — Verify connector
+### Step 1 — Verify MCP health
 
 ```bash
-curl https://YOUR-APP.onrender.com/claude/health
+curl https://ai-executive-platform-1.onrender.com/mcp/health
 ```
 
-Expected:
+### Step 2 — Add Custom Connector in Claude.ai
 
-```json
-{
-  "success": true,
-  "service": "AI Executive Platform Claude Connector",
-  "tools_available": ["get_bitrix_summary", "run_ceo_agent", "..."]
-}
+In Claude.ai → **Settings → Connectors → Add custom connector**:
+
+| Field | Value |
+|-------|-------|
+| **Connector URL** | `https://ai-executive-platform-1.onrender.com/mcp` |
+| **Header** (if `CONNECTOR_SECRET` is set) | `X-Connector-Secret: <your-secret>` |
+
+### Step 3 — Test MCP initialize (optional)
+
+```bash
+curl -X POST https://ai-executive-platform-1.onrender.com/mcp \
+  -H "Content-Type: application/json" \
+  -H "X-Connector-Secret: YOUR_SECRET" \
+  -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1.0\"}}}"
 ```
-
-### Step 2 — Get manifest URL
-
-```
-https://YOUR-APP.onrender.com/claude/manifest
-```
-
-Or static file (update placeholder first):
-
-```
-https://YOUR-APP.onrender.com/public/claude-tools.json
-```
-
-### Step 3 — Add connector in Claude.ai
-
-In Claude.ai (Connectors / Integrations):
-
-1. Add a custom connector or HTTP tool integration.
-2. Use manifest URL: `https://YOUR-APP.onrender.com/claude/manifest`
-3. If using `CONNECTOR_SECRET`, configure header:
-   - `X-Connector-Secret: <your-secret>`
-4. Save and enable the connector.
 
 ### Step 4 — Test in Claude chat
 
@@ -167,7 +162,31 @@ Example prompts:
 - `Finance, pipeline moliyaviy xulosasini ber`
 - `Sales, lidlar va bitimlar bo'yicha qisqa tahlil`
 
-Claude should call `run_ceo_agent` (or the matching agent) with your question.
+Claude calls `run_ceo_agent` (or the matching agent) via Remote MCP with your question.
+
+---
+
+## Legacy HTTP connector (optional)
+
+### Step 1 — Verify connector
+
+```bash
+curl https://ai-executive-platform-1.onrender.com/claude/health
+```
+
+### Step 2 — Get manifest URL
+
+```
+https://ai-executive-platform-1.onrender.com/claude/manifest
+```
+
+### Step 3 — Add connector in Claude.ai
+
+Use manifest URL: `https://ai-executive-platform-1.onrender.com/claude/manifest`
+
+---
+
+## Connect Claude.ai (legacy)
 
 ---
 
@@ -210,10 +229,7 @@ curl -X POST https://YOUR-APP.onrender.com/tools/agent/ceo \
 Claude.ai chat
       │
       ▼
-GET /claude/manifest  (discover tools)
-      │
-      ▼
-POST /tools/agent/ceo  {"question": "..."}
+POST /mcp  (JSON-RPC: initialize → tools/list → tools/call)
       │
       ▼
 AI Executive Platform

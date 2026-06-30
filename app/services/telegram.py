@@ -30,8 +30,14 @@ class TelegramService:
 
     def __init__(self, settings: Optional[Settings] = None) -> None:
         self.settings = settings or get_settings()
-        self._base_url = TELEGRAM_API_BASE.format(token=self.settings.telegram_bot_token)
-        self.chat_id = self.settings.telegram_chat_id
+        self.enabled = self.settings.telegram_enabled
+        if self.enabled:
+            self._base_url = TELEGRAM_API_BASE.format(token=self.settings.telegram_bot_token)
+            self.chat_id = self.settings.telegram_chat_id
+        else:
+            self._base_url = ""
+            self.chat_id = ""
+            logger.info("Telegram integration disabled (credentials not configured)")
 
     @staticmethod
     def split_message(text: str, max_length: int = TELEGRAM_SAFE_CHUNK_SIZE) -> list[str]:
@@ -114,6 +120,10 @@ class TelegramService:
         """
         if not text or not text.strip():
             raise TelegramError("Cannot send empty Telegram message")
+
+        if not self.enabled:
+            logger.info("Telegram disabled — message not sent")
+            return []
 
         chunks = self.split_message(text.strip())
         responses: list[dict] = []

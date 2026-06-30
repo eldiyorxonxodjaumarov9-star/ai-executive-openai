@@ -461,13 +461,15 @@ class AgentRunner:
         telegram_sent = False
         telegram_chunks = 0
 
-        if send_telegram:
+        if send_telegram and self.settings.telegram_enabled:
             responses = await self.telegram.send_report(
                 agent_name=display_name,
                 report=analysis,
             )
             telegram_sent = True
             telegram_chunks = len(responses)
+        elif send_telegram:
+            logger.info("Telegram send skipped — integration disabled")
 
         return AgentReportResult(
             agent_name=normalized,

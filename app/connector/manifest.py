@@ -96,7 +96,9 @@ def build_connector_manifest(base_url: str) -> dict[str, Any]:
         ),
         "base_url": root,
         "documentation": f"{root}/claude/instructions",
+        "mcp_url": f"{root}/mcp",
         "health_check": f"{root}/claude/health",
+        "mcp_health_check": f"{root}/mcp/health",
         "tools": tools,
     }
 
@@ -129,8 +131,10 @@ def build_connector_instructions(base_url: str) -> dict[str, Any]:
             "Sales, lidlar va bitimlar bo'yicha qisqa tahlil",
         ],
         "base_url": root,
+        "mcp_url": f"{root}/mcp",
         "manifest_url": f"{root}/claude/manifest",
         "health_url": f"{root}/claude/health",
+        "mcp_health_url": f"{root}/mcp/health",
     }
 
 

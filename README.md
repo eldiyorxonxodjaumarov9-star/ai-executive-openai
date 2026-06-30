@@ -80,8 +80,8 @@ Open API docs: http://localhost:8000/docs
 |----------|----------|-------------|
 | `BITRIX24_WEBHOOK_URL` | Yes | Bitrix24 incoming webhook URL |
 | `ANTHROPIC_API_KEY` | Yes | Anthropic API key |
-| `TELEGRAM_BOT_TOKEN` | Yes | Telegram BotFather token |
-| `TELEGRAM_CHAT_ID` | Yes | Target chat/group ID |
+| `TELEGRAM_BOT_TOKEN` | No | Optional — omit to disable Telegram |
+| `TELEGRAM_CHAT_ID` | No | Optional — omit to disable Telegram |
 | `CLAUDE_MODEL` | No | Default: `claude-sonnet-4-6` |
 | `CONNECTOR_SECRET` | No | Protect `/tools/*` and `/claude/*` in production |
 | `PUBLIC_BASE_URL` | No | Public URL for connector manifest (e.g. `https://your-app.onrender.com`) |
@@ -190,7 +190,7 @@ This project includes `render.yaml` (Render Blueprint), `Procfile`, and `runtime
 ### Production safety
 
 - **Never commit `.env`** — it is listed in `.gitignore`. Use `.env.example` as a template only.
-- **Set secrets in the Render dashboard** — add `BITRIX24_WEBHOOK_URL`, `ANTHROPIC_API_KEY`, `TELEGRAM_BOT_TOKEN`, and `TELEGRAM_CHAT_ID` as environment variables, not in code.
+- **Set secrets in the Render dashboard** — add `BITRIX24_WEBHOOK_URL`, `ANTHROPIC_API_KEY`, `PUBLIC_BASE_URL`, and `CONNECTOR_SECRET` as environment variables, not in code.
 - **Mask API keys** — do not paste real keys into GitHub, README, logs, or screenshots. Use placeholders like `sk-ant-***` when sharing.
 - **Rotate keys** if they were ever committed or exposed.
 - **Use HTTPS** — Render provides TLS automatically on `*.onrender.com` URLs.
@@ -246,8 +246,8 @@ In **Environment** → **Environment Variables**, add:
 |-----|----------|-----------------|
 | `BITRIX24_WEBHOOK_URL` | Yes | `https://your-domain.bitrix24.uz/rest/1/xxx/` |
 | `ANTHROPIC_API_KEY` | Yes | `sk-ant-api03-...` (keep secret) |
-| `TELEGRAM_BOT_TOKEN` | Yes | Required by app config; use a placeholder if unused |
-| `TELEGRAM_CHAT_ID` | Yes | Required by app config; use a placeholder if unused |
+| `TELEGRAM_BOT_TOKEN` | No | Optional — omit to disable Telegram |
+| `TELEGRAM_CHAT_ID` | No | Optional — omit to disable Telegram |
 | `APP_ENV` | No | `production` |
 | `DEBUG` | No | `false` |
 | `CLAUDE_MODEL` | No | `claude-sonnet-4-6` |
