@@ -1,4 +1,4 @@
-"""Optional connector secret protection for /tools/* and /claude/* routes."""
+"""Optional connector secret protection for external /tools/* and /claude/* routes."""
 
 from __future__ import annotations
 
@@ -10,10 +10,19 @@ from app.config import get_settings
 
 
 class ConnectorSecretMiddleware(BaseHTTPMiddleware):
-    """Require X-Connector-Secret when CONNECTOR_SECRET is configured."""
+    """
+    Require X-Connector-Secret for external tool API routes when CONNECTOR_SECRET is set.
+
+    Not applied to:
+    - /dashboard/api/* (internal same-origin dashboard)
+    - /mcp/health, /claude/health (handled separately)
+    - /mcp POST auth (handled in mcp_remote router)
+    """
 
     @staticmethod
     def _is_protected_path(path: str) -> bool:
+        if path.startswith("/dashboard/api/"):
+            return False
         if path.startswith("/tools/"):
             return True
         if path.startswith("/claude/") and path != "/claude/health":
@@ -21,6 +30,10 @@ class ConnectorSecretMiddleware(BaseHTTPMiddleware):
         return False
 
     async def dispatch(self, request: Request, call_next) -> Response:
+        # Let CORS preflight through without connector secret.
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
         settings = get_settings()
         secret = (settings.connector_secret or "").strip()
 

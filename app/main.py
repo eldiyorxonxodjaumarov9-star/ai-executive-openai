@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -16,7 +17,7 @@ from app.brains.loader import BRAIN_LOAD_ORDER, get_brain_stats
 from app.config import VALID_AGENTS, get_settings
 from app.middleware.connector_auth import ConnectorSecretMiddleware
 from app.mcp.tools import get_mcp_tool_catalog
-from app.routers import claude_connector, claude_tools, mcp_remote
+from app.routers import claude_connector, claude_tools, dashboard_api, mcp_remote
 from app.scheduler.jobs import shutdown_scheduler, start_scheduler
 from app.services.bitrix import Bitrix24Error, Bitrix24Service
 from app.services.bitrix_test import BitrixTestService
@@ -54,9 +55,19 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# CORS must be outermost so OPTIONS preflight succeeds before connector auth.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://claude.ai"],
+    allow_origin_regex=r"^chrome-extension://.*$",
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "X-Connector-Secret"],
+    allow_credentials=False,
+)
 app.add_middleware(ConnectorSecretMiddleware)
 app.include_router(claude_tools.router)
 app.include_router(claude_connector.router)
+app.include_router(dashboard_api.router)
 app.include_router(mcp_remote.router)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 if PUBLIC_DIR.is_dir():

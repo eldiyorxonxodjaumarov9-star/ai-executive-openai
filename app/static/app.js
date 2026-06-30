@@ -125,7 +125,7 @@ async function sendMessage() {
   setLoading(true);
 
   try {
-    const res = await fetch(`/tools/agent/${state.activeAgent}`, {
+    const res = await fetch(`/dashboard/api/agent/${state.activeAgent}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question }),

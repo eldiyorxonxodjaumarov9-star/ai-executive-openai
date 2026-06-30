@@ -77,6 +77,38 @@ class AgentToolRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=8000)
 
 
+async def run_agent_analysis(
+    agent_name: str,
+    question: str,
+    *,
+    optimized: bool = True,
+) -> dict[str, Any]:
+    """Shared agent execution used by external tools and dashboard API."""
+    tool = "run_agent_analysis"
+    runner = AgentRunner()
+
+    normalized = runner.normalize_agent_name(agent_name)
+    answer = await runner.run_agent_report(
+        normalized,
+        question=question.strip(),
+        optimized=optimized,
+    )
+    crm_data = await runner.bitrix.fetch_all_crm_data()
+
+    return _tool_success(
+        tool,
+        {
+            "agent": normalized,
+            "agent_display_name": AGENT_DISPLAY_NAMES.get(normalized, normalized),
+            "question": question.strip(),
+            "optimized": optimized,
+            "answer": answer,
+            "crm_summary": crm_data.get("summary", {}),
+            "fetched_at": crm_data.get("fetched_at"),
+        },
+    )
+
+
 def _tool_success(tool: str, data: Any) -> dict[str, Any]:
     return {"success": True, "tool": tool, "data": data}
 
@@ -175,28 +207,11 @@ async def run_agent_tool(
     tool = "run_agent_analysis"
     logger.info("Claude tool call | tool=%s | agent=%s", tool, agent_name)
 
-    runner = AgentRunner()
-
     try:
-        normalized = runner.normalize_agent_name(agent_name)
-        answer = await runner.run_agent_report(
-            normalized,
-            question=body.question.strip(),
+        return await run_agent_analysis(
+            agent_name,
+            body.question.strip(),
             optimized=optimized,
-        )
-        crm_data = await runner.bitrix.fetch_all_crm_data()
-
-        return _tool_success(
-            tool,
-            {
-                "agent": normalized,
-                "agent_display_name": AGENT_DISPLAY_NAMES.get(normalized, normalized),
-                "question": body.question.strip(),
-                "optimized": optimized,
-                "answer": answer,
-                "crm_summary": crm_data.get("summary", {}),
-                "fetched_at": crm_data.get("fetched_at"),
-            },
         )
     except AgentError as exc:
         logger.error("Tool failed | tool=%s | agent=%s | error=%s", tool, agent_name, exc)

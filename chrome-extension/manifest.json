@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "AI Executive Platform",
+  "version": "1.0.0",
+  "description": "AI Executive agents panel for claude.ai — Bitrix24 live analysis via HARIDLAR.UZ backend.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://ai-executive-platform-1.onrender.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "AI Executive Platform Settings"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://claude.ai/*"],
+      "js": ["content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}
