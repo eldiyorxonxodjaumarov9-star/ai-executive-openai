@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -13,6 +13,41 @@ PROMPTS_DIR = PROJECT_ROOT / "prompts"
 VALID_AGENTS = frozenset(
     {"ceo", "sales", "finance", "marketing", "customer_success", "hr"}
 )
+
+VALID_APP_ENVS = frozenset({"development", "staging", "production"})
+
+
+def parse_bool_env(value: Any, *, default: bool = False) -> bool:
+    """Parse boolean environment values from Render, .env, or shell."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value != 0
+
+    text = str(value).strip().lower()
+    if text in {"", "none", "null"}:
+        return default
+    if text in {"true", "1", "yes", "on"}:
+        return True
+    if text in {"false", "0", "no", "off"}:
+        return False
+
+    raise ValueError(f"Invalid boolean value: {value!r}")
+
+
+def parse_app_env(value: Any) -> Literal["development", "staging", "production"]:
+    """Parse APP_ENV from string values (Render-safe)."""
+    if value is None or str(value).strip() == "":
+        return "production"
+
+    normalized = str(value).strip().lower()
+    if normalized not in VALID_APP_ENVS:
+        raise ValueError(
+            f"APP_ENV must be one of: {', '.join(sorted(VALID_APP_ENVS))}"
+        )
+    return normalized  # type: ignore[return-value]
 
 
 class Settings(BaseSettings):
@@ -27,7 +62,7 @@ class Settings(BaseSettings):
 
     # Application
     app_name: str = "Bitrix24 Claude Integration"
-    app_env: Literal["development", "staging", "production"] = "development"
+    app_env: Literal["development", "staging", "production"] = "production"
     debug: bool = False
     host: str = "0.0.0.0"
     port: int = 8000
@@ -43,12 +78,18 @@ class Settings(BaseSettings):
     claude_model: str = "claude-sonnet-4-6"
     claude_max_tokens: int = 4096
 
-    # Telegram
-    telegram_bot_token: str = Field(..., description="Telegram Bot API token")
-    telegram_chat_id: str = Field(..., description="Target chat ID for reports")
+    # Telegram (optional — omit both to disable)
+    telegram_bot_token: str = Field(
+        default="",
+        description="Optional Telegram Bot API token",
+    )
+    telegram_chat_id: str = Field(
+        default="",
+        description="Optional target chat ID for reports",
+    )
 
     # Scheduler
-    daily_report_enabled: bool = True
+    daily_report_enabled: bool = False
     daily_report_hour: int = Field(9, ge=0, le=23)
     daily_report_minute: int = Field(0, ge=0, le=59)
     daily_report_timezone: str = "Asia/Tashkent"
@@ -69,6 +110,40 @@ class Settings(BaseSettings):
         default="",
         description="Public base URL for connector manifest (e.g. https://your-app.onrender.com)",
     )
+
+    @property
+    def telegram_enabled(self) -> bool:
+        """True when both Telegram credentials are configured."""
+        return bool(self.telegram_bot_token.strip() and self.telegram_chat_id.strip())
+
+    @field_validator("app_env", mode="before")
+    @classmethod
+    def coerce_app_env(cls, value: Any) -> str:
+        return parse_app_env(value)
+
+    @field_validator("debug", mode="before")
+    @classmethod
+    def coerce_debug(cls, value: Any) -> bool:
+        return parse_bool_env(value, default=False)
+
+    @field_validator("daily_report_enabled", mode="before")
+    @classmethod
+    def coerce_daily_report_enabled(cls, value: Any) -> bool:
+        return parse_bool_env(value, default=False)
+
+    @field_validator("connector_secret", "public_base_url", mode="before")
+    @classmethod
+    def coerce_optional_string(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
+
+    @field_validator("telegram_bot_token", "telegram_chat_id", mode="before")
+    @classmethod
+    def coerce_optional_telegram(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
 
     @field_validator("bitrix24_webhook_url")
     @classmethod
