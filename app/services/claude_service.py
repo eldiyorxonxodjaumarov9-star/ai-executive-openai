@@ -1,17 +1,17 @@
-"""Claude API service using the official Anthropic Python SDK."""
+"""
+Legacy Claude facade — disabled in normal chat flow.
+
+Active chat uses OpenAI via app.services.openai_service.ask_openai().
+Set AI_PROVIDER=claude to re-enable Anthropic through app.ai.ask_ai().
+"""
 
 from __future__ import annotations
 
-import anthropic
+from app.ai import AIProviderError, ask_ai
+from app.ai.context import AICompletionContext
 
-from app.config import get_settings
-from app.utils.logger import get_logger
-
-logger = get_logger(__name__)
-
-
-class ClaudeServiceError(Exception):
-    """Raised when a Claude API call fails."""
+# Legacy alias used across routers and agents.
+ClaudeServiceError = AIProviderError
 
 
 async def ask_claude(
@@ -19,52 +19,14 @@ async def ask_claude(
     user_prompt: str,
     *,
     max_tokens: int | None = None,
+    timeout_seconds: float | None = None,
+    context: AICompletionContext | None = None,
 ) -> str:
-    """
-    Send prompts to Claude and return only the generated assistant text.
-    """
-    settings = get_settings()
-    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
-    token_limit = max_tokens if max_tokens is not None else settings.claude_max_tokens
-
-    logger.info(
-        "Claude request started | model=%s | max_tokens=%d | system_chars=%d | user_chars=%d",
-        settings.claude_model,
-        token_limit,
-        len(system_prompt),
-        len(user_prompt),
+    """Legacy entry point — delegates to AI_PROVIDER (use ask_openai for OpenAI)."""
+    return await ask_ai(
+        system_prompt,
+        user_prompt,
+        max_tokens=max_tokens,
+        timeout_seconds=timeout_seconds,
+        context=context,
     )
-
-    try:
-        message = await client.messages.create(
-            model=settings.claude_model,
-            max_tokens=token_limit,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_prompt}],
-        )
-    except anthropic.AuthenticationError as exc:
-        logger.error("Claude authentication failed: %s", exc)
-        raise ClaudeServiceError("Invalid Anthropic API key") from exc
-    except anthropic.APIStatusError as exc:
-        logger.error("Claude API status error | status=%s | message=%s", exc.status_code, exc.message)
-        raise ClaudeServiceError(exc.message) from exc
-    except anthropic.APIError as exc:
-        logger.error("Claude API error: %s", exc)
-        raise ClaudeServiceError(str(exc)) from exc
-    except Exception as exc:
-        logger.error("Claude unexpected error: %s", exc)
-        raise ClaudeServiceError(f"Claude request failed: {exc}") from exc
-
-    text_parts = [
-        block.text
-        for block in message.content
-        if getattr(block, "type", None) == "text" and block.text
-    ]
-    result = "\n".join(text_parts).strip()
-
-    if not result:
-        logger.error("Claude returned an empty response")
-        raise ClaudeServiceError("Claude returned an empty response")
-
-    logger.info("Claude request succeeded | response_chars=%d", len(result))
-    return result

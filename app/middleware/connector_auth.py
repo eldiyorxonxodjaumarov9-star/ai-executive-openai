@@ -1,6 +1,7 @@
 """Optional connector secret protection for external /tools/* and /claude/* routes."""
 
 from __future__ import annotations
+import secrets
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -14,15 +15,17 @@ class ConnectorSecretMiddleware(BaseHTTPMiddleware):
     Require X-Connector-Secret for external tool API routes when CONNECTOR_SECRET is set.
 
     Not applied to:
-    - /dashboard/api/* (internal same-origin dashboard)
     - /mcp/health, /claude/health (handled separately)
     - /mcp POST auth (handled in mcp_remote router)
     """
 
     @staticmethod
     def _is_protected_path(path: str) -> bool:
+        if path.startswith("/api/chat/") or path.startswith("/api/tools/"):
+            return True
+        # /chat/* is public for web dashboard — no connector secret required.
         if path.startswith("/dashboard/api/"):
-            return False
+            return True
         if path.startswith("/tools/"):
             return True
         if path.startswith("/claude/") and path != "/claude/health":
@@ -41,7 +44,7 @@ class ConnectorSecretMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         provided = request.headers.get("X-Connector-Secret", "").strip()
-        if provided != secret:
+        if not provided or not secrets.compare_digest(provided, secret):
             return JSONResponse(
                 status_code=401,
                 content={

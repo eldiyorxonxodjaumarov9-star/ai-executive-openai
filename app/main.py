@@ -8,27 +8,29 @@ from typing import Any, Optional
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app.agents.runner import AgentError, AgentRunner
 from app.brains.loader import BRAIN_LOAD_ORDER, get_brain_stats
-from app.config import VALID_AGENTS, get_settings
+from app.ai import AIProviderError, ask_ai, get_ai_provider_manager
+from app.config import VALID_AGENTS, get_settings, log_ai_provider_startup
 from app.middleware.connector_auth import ConnectorSecretMiddleware
 from app.mcp.tools import get_mcp_tool_catalog
-from app.routers import claude_connector, claude_tools, dashboard_api, mcp_remote
+from app.routers import api_gateway, chat_api, claude_connector, claude_tools, dashboard_api, mcp_remote
 from app.scheduler.jobs import shutdown_scheduler, start_scheduler
 from app.services.bitrix import Bitrix24Error, Bitrix24Service
 from app.services.bitrix_test import BitrixTestService
 from app.services.claude import ClaudeError
-from app.services.claude_service import ClaudeServiceError, ask_claude
+from app.services.openai_service import test_openai_connection
 from app.services.telegram import TelegramError, TelegramService
 from app.utils.logger import get_logger, setup_logging
 
 logger = get_logger(__name__)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 PUBLIC_DIR = Path(__file__).resolve().parent.parent / "public"
+DASHBOARD_HTML = PUBLIC_DIR / "dashboard.html"
 
 
 @asynccontextmanager
@@ -37,7 +39,15 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     log_level = "DEBUG" if settings.debug else "INFO"
     setup_logging(log_level)
-    logger.info("Starting %s [%s]", settings.app_name, settings.app_env)
+    ai_status = get_ai_provider_manager().status()
+    log_ai_provider_startup(settings, logger)
+    logger.info(
+        "Starting %s [%s] | ai_provider=%s | ai_configured=%s",
+        settings.app_name,
+        settings.app_env,
+        ai_status.get("provider"),
+        ai_status.get("configured"),
+    )
 
     start_scheduler(settings)
     yield
@@ -46,25 +56,29 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Bitrix24 Claude Telegram Integration",
+    title="AI Executive Platform",
     description=(
         "Production-ready integration server connecting Bitrix24 CRM, "
-        "Anthropic Claude AI agents, and Telegram notifications."
+        "OpenAI agents, and Telegram notifications."
     ),
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan,
 )
+
+settings = get_settings()
 
 # CORS must be outermost so OPTIONS preflight succeeds before connector auth.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://claude.ai"],
+    allow_origins=settings.cors_origin_list,
     allow_origin_regex=r"^chrome-extension://.*$",
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type", "X-Connector-Secret"],
     allow_credentials=False,
 )
 app.add_middleware(ConnectorSecretMiddleware)
+app.include_router(api_gateway.router)
+app.include_router(chat_api.router)
 app.include_router(claude_tools.router)
 app.include_router(claude_connector.router)
 app.include_router(dashboard_api.router)
@@ -102,6 +116,10 @@ class HealthResponse(BaseModel):
     environment: str
     agents: list[str]
     daily_report_enabled: bool
+    ai_provider: str
+    ai_configured: bool
+    openai_configured: bool
+    claude_legacy_configured: bool
 
 
 # ── Exception handlers ─────────────────────────────────────────────────────
@@ -146,19 +164,32 @@ async def agent_error_handler(_: Request, exc: AgentError) -> JSONResponse:
 async def health() -> HealthResponse:
     """Health check endpoint."""
     settings = get_settings()
+    ai_status = get_ai_provider_manager().status()
     return HealthResponse(
         status="ok",
         app_name=settings.app_name,
         environment=settings.app_env,
         agents=sorted(VALID_AGENTS),
         daily_report_enabled=settings.daily_report_enabled,
+        ai_provider=str(ai_status.get("provider", settings.ai_provider)),
+        ai_configured=bool(ai_status.get("configured")),
+        openai_configured=settings.openai_configured,
+        claude_legacy_configured=settings.claude_legacy_configured,
     )
 
 
-@app.get("/", tags=["Dashboard"])
-async def dashboard_home() -> FileResponse:
-    """Serve AI Chat Dashboard."""
-    return FileResponse(STATIC_DIR / "index.html")
+@app.get("/", tags=["Dashboard"], include_in_schema=False)
+async def root_redirect() -> RedirectResponse:
+    """Redirect root to web dashboard."""
+    return RedirectResponse(url="/dashboard", status_code=307)
+
+
+@app.get("/dashboard", tags=["Dashboard"])
+async def dashboard_page() -> FileResponse:
+    """Serve AI Executive web chat dashboard."""
+    if not DASHBOARD_HTML.is_file():
+        raise HTTPException(status_code=404, detail="dashboard.html topilmadi")
+    return FileResponse(DASHBOARD_HTML, media_type="text/html")
 
 
 @app.get("/mcp/tools", tags=["MCP"])
@@ -204,7 +235,7 @@ async def trigger_daily_report(body: Optional[ReportRequest] = None) -> dict[str
 
 @app.post("/reports/agent/{agent_name}", response_model=AgentReportResponse, tags=["Reports"])
 async def trigger_agent_report(agent_name: str) -> AgentReportResponse:
-    """Run a specific agent report using Bitrix24 CRM data and Claude."""
+    """Run a specific agent report using Bitrix24 CRM data and OpenAI."""
     logger.info("API request | endpoint=POST /reports/agent/%s", agent_name)
     runner = AgentRunner()
 
@@ -322,7 +353,7 @@ async def test_bitrix_tasks() -> dict[str, Any]:
 
 @app.get("/test/brains", tags=["Brain Test"])
 async def test_agent_brains() -> dict[str, Any]:
-    """Validate agent brain files are loaded for all agents (no Claude call)."""
+    """Validate agent brain files are loaded for all agents (no LLM call)."""
     logger.info("API request | endpoint=GET /test/brains")
     runner = AgentRunner()
     agents_report = []
@@ -350,28 +381,83 @@ async def test_agent_brains() -> dict[str, Any]:
     return {"success": all_ok, "agents": agents_report}
 
 
-# ── Claude connectivity test ───────────────────────────────────────────────
+# ── OpenAI connectivity test ─────────────────────────────────────────────────
 
 
-@app.get("/test/claude", tags=["Claude Test"])
-async def test_claude_connection() -> dict[str, Any]:
-    """Test Anthropic Claude API connectivity."""
+@app.get("/test/openai", tags=["AI Test"])
+async def test_openai() -> dict[str, Any]:
+    """Test OpenAI Responses API with a short Uzbek prompt."""
+    logger.info("API request | endpoint=GET /test/openai")
+    return await test_openai_connection()
+
+
+# ── AI connectivity test (all providers) ─────────────────────────────────────
+
+
+@app.get("/test/ai", tags=["AI Test"])
+async def test_ai_connection() -> dict[str, Any]:
+    """Test active AI provider connectivity."""
     settings = get_settings()
-    logger.info("API request | endpoint=GET /test/claude | model=%s", settings.claude_model)
+    manager = get_ai_provider_manager()
+    status = manager.status()
+    provider = str(status.get("provider", settings.ai_provider))
+    model = status.get("model")
+
+    if provider == "none":
+        return {
+            "success": True,
+            "provider": "none",
+            "model": model,
+            "ai_enabled": False,
+            "response": "AI o'chirilgan — CRM shablon javoblari ishlatiladi.",
+        }
+
+    if not status.get("configured"):
+        return {
+            "success": False,
+            "provider": provider,
+            "model": model,
+            "ai_enabled": True,
+            "error": status.get("error") or "AI provider sozlanmagan.",
+        }
+
+    logger.info("API request | endpoint=GET /test/ai | provider=%s | model=%s", provider, model)
 
     try:
-        response_text = await ask_claude(
+        response_text = await ask_ai(
             system_prompt="You are an AI assistant.",
-            user_prompt="Reply with exactly: Claude API Connected Successfully",
+            user_prompt="Reply with exactly: AI API Connected Successfully",
+            max_tokens=64,
+            timeout_seconds=30,
         )
         return {
             "success": True,
-            "model": settings.claude_model,
+            "provider": provider,
+            "model": model,
+            "ai_enabled": True,
             "response": response_text,
         }
-    except ClaudeServiceError as exc:
-        logger.error("Claude test failed: %s", exc)
-        return {"success": False, "error": str(exc)}
+    except AIProviderError as exc:
+        logger.error("AI test failed | provider=%s | %s", provider, exc)
+        return {
+            "success": False,
+            "provider": provider,
+            "model": model,
+            "ai_enabled": provider != "none",
+            "error": str(exc),
+        }
     except Exception as exc:
-        logger.exception("Claude test unexpected error")
-        return {"success": False, "error": str(exc)}
+        logger.exception("AI test unexpected error")
+        return {
+            "success": False,
+            "provider": provider,
+            "model": model,
+            "ai_enabled": provider != "none",
+            "error": str(exc),
+        }
+
+
+@app.get("/test/claude", tags=["AI Test"])
+async def test_claude_connection() -> dict[str, Any]:
+    """Legacy alias — use GET /test/openai for OpenAI or GET /test/ai for active provider."""
+    return await test_ai_connection()

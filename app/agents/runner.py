@@ -1,4 +1,4 @@
-"""Agent runner: loads prompts, brain, knowledge base, Bitrix24 CRM data, calls Claude."""
+"""Agent runner: loads prompts, brain, knowledge base, Bitrix24 CRM data, calls OpenAI."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+from app.agents.language_policy import USER_OUTPUT_INSTRUCTION, wrap_system_prompt
 from app.brains.loader import get_brain_stats, load_agent_brain
 from app.config import PROMPTS_DIR, VALID_AGENTS, Settings, get_settings
 from app.knowledge.loader import load_agent_knowledge
@@ -14,21 +15,36 @@ from app.optimization.brain_router import load_brain_for_intent
 from app.optimization.crm_router import fetch_crm_for_intent
 from app.optimization.intent_analyzer import analyze_intent
 from app.optimization.knowledge_router import load_knowledge_for_intent
+from app.optimization.quick_crm_router import fetch_crm_for_quick
 from app.services.bitrix import Bitrix24Service
-from app.services.claude_service import ClaudeServiceError, ask_claude
+from app.agents.response_mode import detect_response_mode
+from app.ai import AIProviderError, ask_ai
+from app.ai.context import AICompletionContext
+from app.services.openai_service import OpenAIServiceError, ask_openai
 from app.services.telegram import TelegramService
 from app.utils.logger import get_logger
+from app.utils.uzbek_output import sanitize_user_output
 
 logger = get_logger(__name__)
 LAST_OPTIMIZATION_RUN: dict[str, Any] | None = None
 
+QUICK_ANSWER_INSTRUCTION = (
+    "Foydalanuvchi savoliga faqat kerakli ma'lumot asosida qisqa, aniq va o'zbek tilida javob ber. "
+    "Javob odatda 2–8 jumladan iborat bo'lsin. Katta hisobot yozma. Keraksiz bo'limlar ochma. "
+    "Jadval, uzun ro'yxat va keng risk tahlilini faqat savol aniq talab qilsa ishlat. "
+    "Ichki CRM kodlarini (STAGE_ID, STATUS_ID va h.k.) ko'rsatma — faqat o'zbekcha tushunarli nomlar. "
+    "Inglizcha va ruscha so'z ishlatma. "
+    "Agar ma'lumot yetarli bo'lmasa, quyidagicha yoz: "
+    "'Bu savolga aniq javob berish uchun CRMda yetarli ma'lumot topilmadi.'"
+)
+
 AGENT_DISPLAY_NAMES = {
-    "ceo": "CEO Agent",
-    "sales": "Sales Agent",
-    "finance": "Finance Agent",
-    "marketing": "Marketing Agent",
-    "customer_success": "Customer Success Agent",
-    "hr": "HR Agent",
+    "ceo": "Bosh direktor agenti",
+    "sales": "Sotuv agenti",
+    "finance": "Moliya agenti",
+    "marketing": "Marketing agenti",
+    "customer_success": "Mijozlar muvaffaqiyati agenti",
+    "hr": "Kadrlar agenti",
 }
 
 
@@ -62,7 +78,7 @@ class OptimizationTrace:
 
 
 class AgentRunner:
-    """Orchestrates Brain + Knowledge Base + Bitrix24 → Claude agent report pipeline."""
+    """Orchestrates Brain + Knowledge Base + Bitrix24 → AI agent report pipeline."""
 
     def __init__(
         self,
@@ -75,6 +91,94 @@ class AgentRunner:
         self.bitrix = bitrix or Bitrix24Service(self.settings)
         self.telegram = telegram or TelegramService(self.settings)
         self.last_optimization_run: dict[str, Any] | None = LAST_OPTIMIZATION_RUN
+        self.last_crm_data: dict[str, Any] | None = None
+
+    def _build_ai_context(
+        self,
+        *,
+        agent_name: str,
+        crm_data: dict[str, Any],
+        question: str | None = None,
+        mode: str | None = None,
+    ) -> AICompletionContext:
+        q = (question or "").strip()
+        return AICompletionContext(
+            question=q or None,
+            crm_data=crm_data,
+            mode=mode or detect_response_mode(q),  # type: ignore[arg-type]
+            agent_name=agent_name,
+            bitrix=self.bitrix,
+        )
+
+    async def _call_llm(
+        self,
+        instructions: str,
+        user_input: str,
+        *,
+        max_output_tokens: int | None = None,
+        timeout_seconds: float | None = None,
+        context: AICompletionContext | None = None,
+    ) -> str:
+        """Route LLM calls by AI_PROVIDER — OpenAI path never touches Claude."""
+        provider = self.settings.ai_provider.strip().lower()
+
+        if provider == "openai":
+            try:
+                return await ask_openai(
+                    instructions,
+                    user_input,
+                    max_output_tokens=max_output_tokens,
+                    timeout_seconds=timeout_seconds,
+                )
+            except OpenAIServiceError as exc:
+                raise AgentError(str(exc)) from exc
+
+        if provider == "claude":
+            from app.services.claude_service import ask_claude
+
+            try:
+                return await ask_claude(
+                    instructions,
+                    user_input,
+                    max_tokens=max_output_tokens,
+                    timeout_seconds=timeout_seconds,
+                    context=context,
+                )
+            except AIProviderError as exc:
+                raise AgentError(str(exc)) from exc
+
+        try:
+            return await ask_ai(
+                instructions,
+                user_input,
+                max_tokens=max_output_tokens,
+                timeout_seconds=timeout_seconds,
+                context=context,
+            )
+        except AIProviderError as exc:
+            raise AgentError(str(exc)) from exc
+
+    def _quick_llm_limits(self) -> tuple[int, float]:
+        if self.settings.ai_provider.strip().lower() == "openai":
+            return (
+                self.settings.openai_quick_max_output_tokens,
+                self.settings.openai_quick_timeout_seconds,
+            )
+        return (
+            self.settings.claude_quick_max_tokens,
+            self.settings.claude_quick_timeout_seconds,
+        )
+
+    def _full_report_llm_limits(self) -> tuple[int, float]:
+        if self.settings.ai_provider.strip().lower() == "openai":
+            return (
+                max(self.settings.openai_max_output_tokens, self.settings.claude_max_tokens),
+                self.settings.openai_timeout_seconds,
+            )
+        return (
+            self.settings.claude_max_tokens,
+            self.settings.claude_timeout_seconds,
+        )
 
     @staticmethod
     def normalize_agent_name(agent_name: str) -> str:
@@ -135,8 +239,33 @@ class AgentRunner:
         return "\n".join(sections)
 
     @staticmethod
+    def format_bitrix_crm_block_quick(crm_data: dict[str, Any]) -> str:
+        """Compact CRM block for quick_answer — skip empty entity sections."""
+        summary = crm_data.get("summary", {})
+        sections: list[str] = []
+        if crm_data.get("fetched_at"):
+            sections.append(f"Ma'lumot olingan vaqt: {crm_data['fetched_at']}\n")
+
+        sections.append("UMUMIY STATISTIKA:")
+        sections.append(json.dumps(summary, ensure_ascii=False, indent=2))
+
+        for key, label in (
+            ("leads", "LIDLAR"),
+            ("deals", "BITIMLAR"),
+            ("contacts", "KONTAKTLAR"),
+            ("tasks", "VAZIFALAR"),
+        ):
+            items = crm_data.get(key) or []
+            if not items:
+                continue
+            sections.append(f"\n{label} ({len(items)} ta ko'rsatilgan):")
+            sections.append(json.dumps(items, ensure_ascii=False, indent=2))
+
+        return "\n".join(sections)
+
+    @staticmethod
     def format_bitrix_summary(crm_data: dict[str, Any]) -> str:
-        """Normalize Bitrix24 CRM payload into a readable text summary for Claude."""
+        """Normalize Bitrix24 CRM payload into a readable text summary for the LLM."""
         return (
             "Quyidagi Bitrix24 CRM ma'lumotlarini tahlil qiling.\n\n"
             + AgentRunner.format_bitrix_crm_block(crm_data)
@@ -161,7 +290,7 @@ class AgentRunner:
             stats["chars"],
         )
         return (
-            f"{role_prompt}\n\n"
+            f"{wrap_system_prompt(role_prompt)}\n\n"
             "=== AGENT BRAIN — EXECUTIVE INTELLIGENCE LAYER ===\n\n"
             f"{brain}"
         )
@@ -173,7 +302,7 @@ class AgentRunner:
         selected_files, brain = load_brain_for_intent(normalized, intent)
         return (
             selected_files,
-            f"{role_prompt}\n\n=== AGENT BRAIN — EXECUTIVE INTELLIGENCE LAYER ===\n\n{brain}",
+            f"{wrap_system_prompt(role_prompt)}\n\n=== AGENT BRAIN — EXECUTIVE INTELLIGENCE LAYER ===\n\n{brain}",
         )
 
     def build_user_context(
@@ -187,7 +316,7 @@ class AgentRunner:
         Combine company knowledge, Bitrix24 data, and optional user question.
 
         Full pipeline context order:
-        1. System prompt + brain (handled in build_system_prompt / ask_claude system)
+        1. System prompt + brain (handled in build_system_prompt / LLM system message)
         2. Company knowledge
         3. Bitrix24 CRM data
         4. User question (optional)
@@ -212,7 +341,8 @@ class AgentRunner:
                     question.strip(),
                     "",
                     "Yuqoridagi kompaniya bilim bazasi va Bitrix24 ma'lumotlariga tayangan holda "
-                    "foydalanuvchi savoliga agent rolingizga mos professional javob bering.",
+                    "foydalanuvchi savoliga agent rolingizga mos professional javob bering.\n\n"
+                    f"{USER_OUTPUT_INSTRUCTION}",
                 ]
             )
         else:
@@ -220,7 +350,8 @@ class AgentRunner:
                 [
                     "",
                     "Yuqoridagi kompaniya bilim bazasi va Bitrix24 ma'lumotlariga tayangan holda "
-                    "agent rolingizga mos to'liq hisobot tayyorlang.",
+                    "agent rolingizga mos to'liq hisobot tayyorlang.\n\n"
+                    f"{USER_OUTPUT_INSTRUCTION}",
                 ]
             )
 
@@ -252,7 +383,17 @@ class AgentRunner:
                     "=== FOYDALANUVCHI SAVOLI ===",
                     question.strip(),
                     "",
-                    "Yuqoridagi tanlangan bilim bazasi va CRM ma'lumotlariga tayangan holda javob bering.",
+                    "Yuqoridagi tanlangan bilim bazasi va CRM ma'lumotlariga tayangan holda javob bering.\n\n"
+                    f"{USER_OUTPUT_INSTRUCTION}",
+                ]
+            )
+        else:
+            sections.extend(
+                [
+                    "",
+                    "Yuqoridagi tanlangan bilim bazasi va CRM ma'lumotlariga tayangan holda "
+                    "agent rolingizga mos to'liq hisobot tayyorlang.\n\n"
+                    f"{USER_OUTPUT_INSTRUCTION}",
                 ]
             )
         return "\n".join(sections)
@@ -264,7 +405,7 @@ class AgentRunner:
         *,
         question: Optional[str] = None,
     ) -> str:
-        """Send system prompt + brain + knowledge + CRM data (+ question) to Claude."""
+        """Send system prompt + brain + knowledge + CRM data (+ question) to OpenAI."""
         normalized = self.normalize_agent_name(agent_name)
         system_prompt = self.build_system_prompt(normalized)
         user_prompt = self.build_user_context(
@@ -272,23 +413,27 @@ class AgentRunner:
             crm_data,
             question=question,
         )
+        max_tokens, timeout = self._full_report_llm_limits()
 
         logger.info(
-            "Calling Claude | agent=%s | crm_summary=%s | has_question=%s",
+            "Calling OpenAI | agent=%s | crm_summary=%s | has_question=%s",
             normalized,
             crm_data.get("summary", {}),
             bool(question and question.strip()),
         )
 
-        try:
-            return await ask_claude(
-                system_prompt,
-                user_prompt,
-                max_tokens=self.settings.claude_max_tokens,
-            )
-        except ClaudeServiceError as exc:
-            logger.error("Claude failed for agent=%s: %s", normalized, exc)
-            raise AgentError(str(exc)) from exc
+        return await self._call_llm(
+            system_prompt,
+            user_prompt,
+            max_output_tokens=max_tokens,
+            timeout_seconds=timeout,
+            context=self._build_ai_context(
+                agent_name=normalized,
+                crm_data=crm_data,
+                question=question,
+                mode="full_report",
+            ),
+        )
 
     async def _generate_analysis_optimized(
         self,
@@ -296,7 +441,7 @@ class AgentRunner:
         *,
         question: Optional[str] = None,
     ) -> str:
-        """Optimized path: route context dynamically before calling Claude."""
+        """Optimized path: route context dynamically before calling OpenAI."""
         normalized = self.normalize_agent_name(agent_name)
         intent_result = analyze_intent(question)
         selected_brain_files, system_prompt = self.build_system_prompt_optimized(
@@ -308,6 +453,7 @@ class AgentRunner:
         selected_crm_entities, crm_data = await fetch_crm_for_intent(
             self.bitrix, intent_result.intent
         )
+        self.last_crm_data = crm_data
         user_prompt = self.build_user_context_optimized(
             normalized,
             crm_data,
@@ -341,24 +487,88 @@ class AgentRunner:
             trace.estimated_tokens,
             trace.optimization_enabled,
         )
-        try:
-            return await ask_claude(
-                system_prompt,
-                user_prompt,
-                max_tokens=self.settings.claude_max_tokens,
-            )
-        except ClaudeServiceError as exc:
-            logger.warning(
-                "Optimized mode failed, falling back to full context | agent=%s | error=%s",
-                normalized,
-                exc,
-            )
-            full_crm = await self.bitrix.fetch_all_crm_data()
-            return await self._generate_analysis(
-                normalized,
-                full_crm,
+        max_tokens, timeout = self._full_report_llm_limits()
+        return await self._call_llm(
+            system_prompt,
+            user_prompt,
+            max_output_tokens=max_tokens,
+            timeout_seconds=timeout,
+            context=self._build_ai_context(
+                agent_name=normalized,
+                crm_data=crm_data,
                 question=question,
-            )
+                mode="full_report",
+            ),
+        )
+
+    async def run_quick_answer(
+        self,
+        agent_name: str,
+        *,
+        question: Optional[str] = None,
+    ) -> str:
+        """Fast Q&A: minimal CRM, short prompt, 2–8 sentence answer."""
+        normalized = self.normalize_agent_name(agent_name)
+        display = AGENT_DISPLAY_NAMES.get(normalized, normalized)
+        q = (question or "").strip()
+        if not q:
+            raise AgentError("Savol bo'sh bo'lishi mumkin emas.")
+
+        logger.info("Quick answer | agent=%s | question_len=%d", normalized, len(q))
+
+        role_prompt = self.load_prompt(normalized)
+        system_prompt = (
+            f"{wrap_system_prompt(role_prompt)}\n\n"
+            f"Siz {display} sifatida tezkor savol-javob rejimidasiz.\n\n"
+            f"{QUICK_ANSWER_INSTRUCTION}\n\n"
+            f"{USER_OUTPUT_INSTRUCTION}"
+        )
+
+        selected_entities, crm_data = await fetch_crm_for_quick(self.bitrix, q)
+        self.last_crm_data = crm_data
+
+        _, knowledge_text = load_knowledge_for_intent(normalized, "unknown")
+        if len(knowledge_text) > 2500:
+            knowledge_text = knowledge_text[:2500] + "\n…[qisqartirildi]"
+
+        user_prompt = "\n".join(
+            [
+                "=== QISQA KONTEKST (faqat kerakli qism) ===",
+                knowledge_text or "Qo'shimcha bilim bazasi yo'q.",
+                "",
+                "=== BITRIX24 (tanlangan qism) ===",
+                self.format_bitrix_crm_block_quick(crm_data),
+                "",
+                "=== SAVOL ===",
+                q,
+                "",
+                "Yuqoridagi ma'lumotlarga tayangan holda qisqa javob bering (2–8 jumla).",
+            ]
+        )
+
+        logger.info(
+            "Quick answer context | agent=%s | crm_entities=%s | user_chars=%d",
+            normalized,
+            selected_entities,
+            len(user_prompt),
+        )
+
+        max_tokens, timeout = self._quick_llm_limits()
+        analysis = await self._call_llm(
+            system_prompt,
+            user_prompt,
+            max_output_tokens=max_tokens,
+            timeout_seconds=timeout,
+            context=self._build_ai_context(
+                agent_name=normalized,
+                crm_data=crm_data,
+                question=q,
+                mode="quick_answer",
+            ),
+        )
+
+        logger.info("Quick answer done | agent=%s | chars=%d", normalized, len(analysis))
+        return sanitize_user_output(analysis)
 
     async def run_agent_report(
         self,
@@ -372,7 +582,7 @@ class AgentRunner:
         1. Validate agent name and load system prompt + brain
         2. Load company knowledge files
         3. Fetch Bitrix24 CRM data
-        4. Combine context and call Claude
+        4. Combine context and call OpenAI
         5. Return AI analysis text
         """
         normalized = self.normalize_agent_name(agent_name)
@@ -388,13 +598,14 @@ class AgentRunner:
                     normalized,
                     question=question,
                 )
-            except Exception as exc:
+            except (OSError, ValueError, KeyError) as exc:
                 logger.warning(
                     "Optimizer failed, using full context fallback | agent=%s | error=%s",
                     normalized,
                     exc,
                 )
                 crm_data = await self.bitrix.fetch_all_crm_data()
+                self.last_crm_data = crm_data
                 analysis = await self._generate_analysis(
                     normalized,
                     crm_data,
@@ -402,6 +613,7 @@ class AgentRunner:
                 )
         else:
             crm_data = await self.bitrix.fetch_all_crm_data()
+            self.last_crm_data = crm_data
             analysis = await self._generate_analysis(
                 normalized,
                 crm_data,
@@ -413,7 +625,7 @@ class AgentRunner:
             normalized,
             len(analysis),
         )
-        return analysis
+        return sanitize_user_output(analysis)
 
     async def run_agent(
         self,
@@ -436,7 +648,7 @@ class AgentRunner:
                 )
                 if crm_data is None:
                     crm_data = {"summary": {}}
-            except Exception as exc:
+            except (OSError, ValueError, KeyError) as exc:
                 logger.warning(
                     "Optimizer failed, using full context fallback | agent=%s | error=%s",
                     normalized,
@@ -444,6 +656,7 @@ class AgentRunner:
                 )
                 if crm_data is None:
                     crm_data = await self.bitrix.fetch_all_crm_data()
+                    self.last_crm_data = crm_data
                 analysis = await self._generate_analysis(
                     normalized,
                     crm_data,
@@ -452,11 +665,14 @@ class AgentRunner:
         else:
             if crm_data is None:
                 crm_data = await self.bitrix.fetch_all_crm_data()
+                self.last_crm_data = crm_data
             analysis = await self._generate_analysis(
                 normalized,
                 crm_data,
                 question=question,
             )
+
+        analysis = sanitize_user_output(analysis)
 
         telegram_sent = False
         telegram_chunks = 0
