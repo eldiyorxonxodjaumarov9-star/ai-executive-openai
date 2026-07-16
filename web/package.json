@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test:v2": "tsx scripts/test-v2-architecture.ts",
+    "test:agents": "tsx scripts/test-agent-crm.ts"
   },
   "dependencies": {
     "next": "^15.1.0",

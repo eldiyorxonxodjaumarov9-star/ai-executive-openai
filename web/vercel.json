@@ -17,6 +17,12 @@
     },
     "app/api/debug/agent-crm/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/debug/executive/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/chat/agent/[agent]/stream/route.ts": {
+      "maxDuration": 60
     }
   }
 }

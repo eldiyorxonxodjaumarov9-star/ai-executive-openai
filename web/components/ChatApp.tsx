@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { ApiError, checkHealth, looksLikeCrmQuestion, newId, quickChat } from "@/lib/api";
+import { ApiError, checkHealth, looksLikeCrmQuestion, newId, quickChatStream } from "@/lib/api";
 import {
   AGENTS,
   SUGGESTIONS,
@@ -180,24 +180,46 @@ export default function ChatApp() {
       }
       setLoading(true);
 
+      let assistantId = newId();
+      if (options?.refresh) {
+        const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+        if (lastAssistant) {
+          assistantId = lastAssistant.id;
+          setMessages((prev) =>
+            prev.map((m) => (m.id === assistantId ? { ...m, content: "" } : m))
+          );
+        }
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          { id: assistantId, role: "assistant", content: "", timestamp: Date.now() },
+        ]);
+      }
+
       try {
-        const answer = await quickChat(agent, question, {
+        const answer = await quickChatStream(agent, question, {
           refresh: options?.refresh,
           conversationId: conversationIdRef.current,
+          onStatus: (msg) => setLoadingMessage(msg),
+          onDelta: (chunk) => {
+            setMessages((prev) => {
+              const idx = prev.findIndex((m) => m.id === assistantId);
+              if (idx === -1) return prev;
+              const updated = [...prev];
+              updated[idx] = { ...updated[idx], content: updated[idx].content + chunk };
+              return updated;
+            });
+          },
         });
-        const assistantMsg: ChatMessage = {
-          id: newId(),
-          role: "assistant",
-          content: answer,
-          timestamp: Date.now(),
-        };
-        const last = next[next.length - 1];
-        const updated =
-          options?.refresh && last?.role === "assistant"
-            ? [...next.slice(0, -1), assistantMsg]
-            : [...next, assistantMsg];
-        setMessages(updated);
-        persistMessages(agent, updated);
+
+        setMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === assistantId);
+          if (idx === -1) return prev;
+          const updated = [...prev];
+          updated[idx] = { ...updated[idx], content: answer };
+          persistMessages(agent, updated);
+          return updated;
+        });
       } catch (e) {
         setError(e instanceof ApiError ? e.message : "OpenAI bilan javob olishda xato yuz berdi.");
       } finally {
@@ -366,14 +388,20 @@ export default function ChatApp() {
                   <div className={styles.messageBody}>
                     {m.role === "assistant" ? (
                       <>
-                        <ReactMarkdown>{m.content}</ReactMarkdown>
-                        <button
-                          type="button"
-                          className={styles.copyBtn}
-                          onClick={() => copyAnswer(m.content, m.id)}
-                        >
-                          {copiedId === m.id ? "Nusxalandi" : "Nusxalash"}
-                        </button>
+                        {m.content ? (
+                          <ReactMarkdown>{m.content}</ReactMarkdown>
+                        ) : loading ? (
+                          <div className={styles.typing}>{loadingMessage}</div>
+                        ) : null}
+                        {m.content ? (
+                          <button
+                            type="button"
+                            className={styles.copyBtn}
+                            onClick={() => copyAnswer(m.content, m.id)}
+                          >
+                            {copiedId === m.id ? "Nusxalandi" : "Nusxalash"}
+                          </button>
+                        ) : null}
                       </>
                     ) : (
                       <p>{m.content}</p>
@@ -381,7 +409,7 @@ export default function ChatApp() {
                   </div>
                 </article>
               ))}
-              {loading && (
+              {loading && messages[messages.length - 1]?.role !== "assistant" && (
                 <article className={`${styles.message} ${styles.messageAi}`}>
                   <div className={`${styles.messageAvatar} ${styles[`messageAvatar_${agent}`]}`}>
                     {agentMeta.short}

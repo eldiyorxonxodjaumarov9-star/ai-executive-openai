@@ -56,6 +56,31 @@ export async function chatCompletion(
   }
 }
 
+export async function* chatCompletionStream(
+  systemPrompt: string,
+  userPrompt: string,
+  maxTokens: number
+): AsyncGenerator<string, void, unknown> {
+  assertOpenAIConfigured();
+  const { openaiApiKey, openaiModel } = getEnv();
+  const client = new OpenAI({ apiKey: openaiApiKey, timeout: 55000, maxRetries: 1 });
+
+  const stream = await client.responses.create({
+    model: openaiModel,
+    instructions: systemPrompt,
+    input: userPrompt,
+    max_output_tokens: maxTokens,
+    stream: true,
+  });
+
+  for await (const event of stream) {
+    if (event.type === "response.output_text.delta" && "delta" in event) {
+      const delta = (event as { delta?: string }).delta;
+      if (delta) yield delta;
+    }
+  }
+}
+
 export async function testOpenAI(): Promise<{ success: boolean; response?: string; error?: string }> {
   try {
     const response = await chatCompletion(

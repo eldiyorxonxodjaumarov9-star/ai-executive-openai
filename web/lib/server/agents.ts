@@ -11,10 +11,10 @@ import {
 } from "./constants";
 import { AGENT_PROFESSIONAL_INSTRUCTIONS } from "./agent-crm-config";
 import { appendFreshnessToAnswer } from "./agent-context";
-import { fetchCrmForQuick, formatCrmBlockQuick, hasCrmData } from "./crm-router";
+import { runExecutivePipeline } from "./executive-pipeline";
 import { analyzeRouteIntent, type IntentType } from "./intent-router";
 import { loadKnowledgeForIntent } from "./knowledge-router";
-import { chatCompletion } from "./openai";
+import { chatCompletion, chatCompletionStream } from "./openai";
 import { loadAgentPrompt } from "./prompts";
 import { sanitizeUserOutput } from "./sanitize";
 import { getEnv } from "./env";
@@ -35,6 +35,13 @@ export interface QuickAnswerResult {
   crmEntities: string[];
   crmFetchStatus?: SalesFetchStatus;
   dataFreshness?: { fetchedAt: string; cached: boolean };
+  mode?: "quick_answer" | "executive_v2";
+  executionMs?: number;
+}
+
+function hasExecutiveData(exec: Awaited<ReturnType<typeof runExecutivePipeline>>): boolean {
+  const loaded = exec.orchestration.context.loaded;
+  return loaded.deals.length + loaded.leads.length + loaded.contacts.length + loaded.tasks.length > 0;
 }
 
 function instructionForIntent(intent: IntentType): string {
@@ -150,13 +157,26 @@ export async function runQuickAnswer(
       knowledgeText = knowledge.text;
     }
 
-    const crmResult = await fetchCrmForQuick(q, agent, { bypassCache: options.bypassCache });
-    crmEntities = crmResult.entities;
-    crmSummary = crmResult.data.summary as unknown as Record<string, unknown>;
-    crmFetchStatus = crmResult.fetchStatus;
-    crmBlock = formatCrmBlockQuick(crmResult.data, route.type === "hybrid_question" ? "hybrid" : "crm_only");
-    fetchedAt = crmResult.fetchedAt;
-    cached = crmResult.cached ?? false;
+    const exec = await runExecutivePipeline(agent, q, {
+      bypassCache: options.bypassCache,
+      conversationId: options.conversationId,
+    });
+
+    crmEntities = exec.orchestration.plan.entities;
+    crmFetchStatus = exec.fetchStatus;
+    fetchedAt = exec.fetchedAt;
+    cached = exec.cached;
+    crmSummary = {
+      entities: exec.orchestration.context.loaded.entitiesFetched,
+      kpis: exec.orchestration.context.kpis,
+      risks: exec.orchestration.context.risks.length,
+      recommendations: exec.orchestration.context.recommendations.length,
+      executionMs: exec.orchestration.totalDurationMs,
+    };
+    crmBlock = exec.contextBlock + exec.memoryBlock;
+    if (exec.executiveReport) {
+      crmBlock += `\n\n=== EXECUTIVE REPORT (markdown) ===\n${exec.executiveReport}`;
+    }
 
     if (crmFetchStatus === "webhook_error" || crmFetchStatus === "permission_denied") {
       const msg =
@@ -175,7 +195,7 @@ export async function runQuickAnswer(
       };
     }
 
-    if (!hasCrmData(crmResult.data) && crmFetchStatus === "empty_crm") {
+    if (!hasExecutiveData(exec) && crmFetchStatus === "empty_crm") {
       return {
         answer: sanitizeUserOutput("Bitrix24 da hozircha bitimlar mavjud emas."),
         intent: route.type,
@@ -221,7 +241,77 @@ export async function runQuickAnswer(
     crmEntities,
     crmFetchStatus,
     dataFreshness: fetchedAt ? { fetchedAt, cached } : undefined,
+    mode: route.type === "crm_question" || route.type === "hybrid_question" ? "executive_v2" : "quick_answer",
+    executionMs:
+      route.type === "crm_question" || route.type === "hybrid_question"
+        ? (crmSummary.executionMs as number | undefined)
+        : undefined,
   };
 }
 
 export type { AgentId };
+
+export type StreamEvent =
+  | { type: "status"; message: string; phase: "bitrix" | "reasoning" | "generating" }
+  | { type: "delta"; text: string }
+  | { type: "done"; answer: string; mode: "quick_answer" | "executive_v2" };
+
+export async function* runQuickAnswerStream(
+  agentName: string,
+  question: string,
+  options: QuickAnswerOptions = {}
+): AsyncGenerator<StreamEvent, void, unknown> {
+  const agent = normalizeAgent(agentName);
+  const q = question.trim();
+  if (!q) throw new Error("Savol bo'sh bo'lishi mumkin emas.");
+
+  const route = analyzeRouteIntent(q);
+  const systemPrompt = buildSystemPrompt(agent, route.type);
+
+  let brainText = "";
+  let knowledgeText = "";
+  let crmBlock = "";
+  let fetchedAt: string | undefined;
+
+  if (route.type === "casual_chat") {
+    brainText = loadBrainForIntent(agent, route.domainIntent, "casual").text;
+  } else if (route.type === "knowledge_question") {
+    brainText = loadBrainForIntent(agent, route.domainIntent, "full").text;
+    knowledgeText = loadKnowledgeForIntent(agent, route.domainIntent).text;
+  } else if (route.type === "crm_question" || route.type === "hybrid_question") {
+    if (route.type === "hybrid_question") {
+      brainText = loadBrainForIntent(agent, route.domainIntent, "full").text;
+      knowledgeText = loadKnowledgeForIntent(agent, route.domainIntent).text;
+    }
+    yield { type: "status", message: "Bitrix24 ma'lumotlari yangilanmoqda...", phase: "bitrix" };
+    const exec = await runExecutivePipeline(agent, q, {
+      bypassCache: options.bypassCache,
+      conversationId: options.conversationId,
+    });
+    fetchedAt = exec.fetchedAt;
+    crmBlock = exec.contextBlock + exec.memoryBlock;
+    if (exec.executiveReport) crmBlock += `\n\n=== EXECUTIVE REPORT ===\n${exec.executiveReport}`;
+    yield { type: "status", message: "Tahlil va reasoning bajarilmoqda...", phase: "reasoning" };
+  }
+
+  const userPrompt = buildUserPrompt(route.type, q, brainText, knowledgeText, crmBlock);
+  const { quickMaxTokens } = getEnv();
+  yield { type: "status", message: "Javob generatsiya qilinmoqda...", phase: "generating" };
+
+  let raw = "";
+  for await (const chunk of chatCompletionStream(systemPrompt, userPrompt, quickMaxTokens)) {
+    raw += chunk;
+    yield { type: "delta", text: chunk };
+  }
+
+  let answer = sanitizeUserOutput(raw);
+  if ((route.type === "crm_question" || route.type === "hybrid_question") && fetchedAt) {
+    answer = appendFreshnessToAnswer(answer, fetchedAt);
+  }
+
+  yield {
+    type: "done",
+    answer,
+    mode: route.type === "crm_question" || route.type === "hybrid_question" ? "executive_v2" : "quick_answer",
+  };
+}

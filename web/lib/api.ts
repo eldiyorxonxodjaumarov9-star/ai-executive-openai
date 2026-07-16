@@ -90,6 +90,71 @@ export async function checkHealth(): Promise<HealthResponse> {
   return request<HealthResponse>("/api/health", { method: "GET" }, 15000);
 }
 
+export interface ChatStreamCallbacks {
+  onStatus?: (message: string) => void;
+  onDelta?: (text: string) => void;
+}
+
+export async function quickChatStream(
+  agent: AgentId,
+  question: string,
+  options: ChatRequestOptions & ChatStreamCallbacks = {}
+): Promise<string> {
+  const conversationId = options.conversationId || `conv-${agent}-${Date.now()}`;
+  const res = await fetch(`/api/chat/agent/${agent}/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      agentId: agent,
+      message: question,
+      conversationId,
+      refresh: Boolean(options.refresh),
+    }),
+  });
+
+  if (!res.ok || !res.body) {
+    return quickChat(agent, question, options);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let answer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const payload = line.slice(6).trim();
+      if (payload === "[DONE]") continue;
+      try {
+        const event = JSON.parse(payload) as {
+          type: string;
+          message?: string;
+          text?: string;
+          answer?: string;
+        };
+        if (event.type === "status" && event.message) options.onStatus?.(event.message);
+        if (event.type === "delta" && event.text) {
+          answer += event.text;
+          options.onDelta?.(event.text);
+        }
+        if (event.type === "done" && event.answer) answer = event.answer;
+        if (event.type === "error") throw new ApiError(event.message || "Stream xatosi");
+      } catch (e) {
+        if (e instanceof ApiError) throw e;
+      }
+    }
+  }
+
+  return answer || quickChat(agent, question, options);
+}
+
 export async function quickChat(
   agent: AgentId,
   question: string,

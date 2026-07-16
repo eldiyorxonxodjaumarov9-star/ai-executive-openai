@@ -1,19 +1,8 @@
 import type { AgentId } from "./constants";
 import { entitiesForAgent, type BitrixEntityType } from "./agent-crm-config";
-import { cacheKey, getCached, setCached, shouldBypassCache } from "./bitrix-cache";
-import {
-  fetchAllDealsCompleteWithMeta,
-  fetchContacts,
-  fetchDealStages,
-  fetchLeads,
-  fetchTasks,
-  fetchCompanies,
-  fetchActivities,
-  fetchUsersByIds,
-  type CrmRecord,
-  type DealStageInfo,
-  type BitrixUserInfo,
-} from "./bitrix";
+import { shouldBypassCache } from "./bitrix-cache";
+import { fetchUsersByIds, type CrmRecord, type DealStageInfo, type BitrixUserInfo } from "./bitrix";
+import { fetchEntity } from "./tools/entity-fetch";
 
 export interface BitrixLoadedData {
   deals: CrmRecord[];
@@ -35,57 +24,7 @@ async function loadEntity(
   entity: BitrixEntityType,
   bypass: boolean
 ): Promise<{ data: unknown; cached: boolean; limitation?: string }> {
-  const key = cacheKey(entity);
-  if (!bypass) {
-    const hit = getCached<unknown>(key);
-    if (hit) return { data: hit.data, cached: true };
-  }
-
-  try {
-    let data: unknown;
-    switch (entity) {
-      case "deals": {
-        const r = await fetchAllDealsCompleteWithMeta();
-        data = r;
-        setCached(key, r);
-        return { data: r, cached: false };
-      }
-      case "stages": {
-        data = await fetchDealStages();
-        setCached(key, data);
-        return { data, cached: false };
-      }
-      case "leads": {
-        data = await fetchLeads();
-        setCached(key, data);
-        return { data, cached: false };
-      }
-      case "contacts": {
-        data = await fetchContacts();
-        setCached(key, data);
-        return { data, cached: false };
-      }
-      case "companies": {
-        data = await fetchCompanies();
-        setCached(key, data);
-        return { data, cached: false };
-      }
-      case "tasks": {
-        data = await fetchTasks();
-        setCached(key, data);
-        return { data, cached: false };
-      }
-      case "activities": {
-        data = await fetchActivities();
-        setCached(key, data);
-        return { data, cached: false };
-      }
-    }
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "fetch xato";
-    return { data: null, cached: false, limitation: `${entity}: ${msg}` };
-  }
-  return { data: null, cached: false, limitation: `${entity}: noma'lum` };
+  return fetchEntity(entity, bypass);
 }
 
 export async function loadBitrixDataForAgent(
