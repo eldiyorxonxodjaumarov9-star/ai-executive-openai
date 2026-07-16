@@ -64,9 +64,7 @@ function buildUserPrompt(
   const parts: string[] = [];
 
   if (intent === "casual_chat") {
-    if (brainText) {
-      parts.push("=== AGENT MA'LUMOTI ===", brainText, "");
-    }
+    if (brainText) parts.push("=== AGENT MA'LUMOTI ===", brainText, "");
     parts.push("=== SAVOL ===", question, "", "Tabiiy va qisqa javob bering.");
     return parts.join("\n");
   }
@@ -91,55 +89,6 @@ function buildUserPrompt(
   }
 
   return parts.join("\n");
-}
-
-function buildServerSideCrmAnswer(
-  question: string,
-  fetchStatus: SalesFetchStatus,
-  logReason?: string
-): string | null {
-  if (fetchStatus === "webhook_error") {
-    return "Bitrix24 bilan hozir bog'lanib bo'lmadi. Keyinroq qayta urinib ko'ring.";
-  }
-  if (fetchStatus === "permission_denied") {
-    return "Bitrix24 dan sotuv ma'lumotlarini o'qish uchun ruxsat yetarli emas. Administrator bilan bog'laning.";
-  }
-  return null;
-}
-
-function buildServerSideSalesAnswer(question: string, crmBlock: string, fetchStatus?: SalesFetchStatus): string | null {
-  if (fetchStatus === "webhook_error" || fetchStatus === "permission_denied") {
-    return buildServerSideCrmAnswer(question, fetchStatus);
-  }
-
-  const q = question.toLowerCase();
-  const wonMatch = crmBlock.match(/Summasi: ([^\n]+)/);
-  const countMatch = crmBlock.match(/Soni: (\d+) ta/);
-  const createdMatch = crmBlock.match(/Bugun yaratilgan bitimlar: (\d+) ta/);
-  const modifiedMatch = crmBlock.match(/Bugun o'zgartirilgan faol bitimlar: (\d+) ta/);
-
-  if (!wonMatch && fetchStatus === "empty_crm") {
-    return "Bitrix24 da hozircha bitimlar mavjud emas.";
-  }
-
-  if (/\bnechta.*yaratil/i.test(q) && createdMatch) {
-    return `Bugun ${createdMatch[1]} ta yangi bitim yaratilgan.`;
-  }
-
-  if (/\bnechta.*yopil/i.test(q) && countMatch) {
-    return `Bugun ${countMatch[1]} ta bitim muvaffaqiyatli yopilgan.`;
-  }
-
-  if (fetchStatus === "no_filter_match" && countMatch && wonMatch) {
-    const count = countMatch[1];
-    const sum = wonMatch[1];
-    if (count === "0") {
-      return `Bugun muvaffaqiyatli yopilgan bitimlar topilmadi (0 ta). Bugun yaratilgan bitimlar: ${createdMatch?.[1] || "0"} ta.`;
-    }
-    return `Bugun ${count} ta bitim muvaffaqiyatli yopilgan, jami summa ${sum}.`;
-  }
-
-  return null;
 }
 
 export async function runQuickAnswer(agentName: string, question: string): Promise<QuickAnswerResult> {
@@ -177,11 +126,13 @@ export async function runQuickAnswer(agentName: string, question: string): Promi
     crmFetchStatus = fetchStatus;
     crmBlock = formatCrmBlockQuick(data, "crm_only");
 
-    const serverAnswer = buildServerSideCrmAnswer(q, fetchStatus || "ok", fetchLogReason)
-      ?? buildServerSideSalesAnswer(q, crmBlock, fetchStatus);
-    if (serverAnswer && (fetchStatus === "webhook_error" || fetchStatus === "permission_denied")) {
+    if (fetchStatus === "webhook_error" || fetchStatus === "permission_denied") {
+      const msg =
+        fetchStatus === "permission_denied"
+          ? "Bitrix24 dan ma'lumot o'qish uchun ruxsat yetarli emas."
+          : "Bitrix24 bilan hozir bog'lanib bo'lmadi.";
       return {
-        answer: sanitizeUserOutput(serverAnswer),
+        answer: sanitizeUserOutput(msg),
         intent: route.type,
         domainIntent: route.domainIntent,
         crmSummary,
@@ -192,12 +143,9 @@ export async function runQuickAnswer(agentName: string, question: string): Promi
       };
     }
 
-    if (!hasCrmData(data) && fetchStatus !== "no_filter_match") {
+    if (!hasCrmData(data) && fetchStatus === "empty_crm") {
       return {
-        answer: sanitizeUserOutput(
-          buildServerSideCrmAnswer(q, fetchStatus || "empty_crm", fetchLogReason)
-            || "Bitrix24 da bu savol bo'yicha ma'lumot topilmadi."
-        ),
+        answer: sanitizeUserOutput("Bitrix24 da hozircha bitimlar mavjud emas."),
         intent: route.type,
         domainIntent: route.domainIntent,
         crmSummary,

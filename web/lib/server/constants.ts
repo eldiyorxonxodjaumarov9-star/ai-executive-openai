@@ -36,10 +36,11 @@ export const KNOWLEDGE_ANSWER_INSTRUCTION = `Bilim bazasi va agent promptiga tay
 Aniq, foydali va o'zbek tilida bo'lsin. CRM ma'lumotlari talab qilinmaydi — ularni o'zingizdan uydirmang.
 "CRMda ma'lumot topilmadi" iborasini ishlatmang.`;
 
-export const CRM_ANSWER_INSTRUCTION = `Bitrix24 dan olingan jonli ma'lumotlarga asoslanib javob bering (2–8 jumla).
-Raqamlar aniq bo'lsin. Faqat berilgan ma'lumotdan foydalaning — taxmin qilmang.
-Agar Bitrix24 ma'lumoti bo'sh yoki yetarli bo'lmasa, faqat shunday yozing:
-"Bitrix24 da bu savolga javob beradigan aniq ma'lumot topilmadi."
+export const CRM_ANSWER_INSTRUCTION = `Bitrix24 dan olingan jonli ma'lumotlarga asoslanib javob bering (2–10 jumla).
+Raqamlar aniq bo'lsin. Faqat berilgan analytics va statistikadan foydalaning — taxmin qilmang.
+Umumiy bazada bitimlar mavjud bo'lsa, davr bo'yicha 0 natija bo'lsa ham umumiy statistikani tushuntiring.
+Masalan: "Bugun yangi bitim yo'q, lekin jami bazada 52 ta bitim mavjud."
+Faqat Bitrix24 dan hech qanday ma'lumot kelmaganda "Bitrix24 da bu savolga javob beradigan aniq ma'lumot topilmadi" deb yozing.
 Ichki CRM kodlarini ko'rsatmang.`;
 
 export const HYBRID_ANSWER_INSTRUCTION = `Bilim bazasi qoidalarini va Bitrix24 jonli ma'lumotlarini birlashtirib javob bering (3–10 jumla).

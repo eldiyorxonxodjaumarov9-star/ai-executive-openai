@@ -2,13 +2,12 @@ import type { CrmRecord, DealStageInfo } from "./bitrix";
 import {
   TASHKENT_TZ,
   getDatePartsInTz,
-  getLastNDaysRange,
   getTodayRange,
-  getYesterdayRange,
   isDateInRange,
   parseBitrixDate,
   type DateRange,
 } from "./tashkent-time";
+import { parseDateRangeFromQuestion } from "./date-range-parser";
 
 export type SalesFetchStatus =
   | "ok"
@@ -103,20 +102,8 @@ function toSummary(deal: CrmRecord, stages: Map<string, DealStageInfo>): DealSum
 }
 
 export function parseSalesPeriod(question: string): DateRange {
-  const text = question.toLowerCase().replace(/ʻ|’|`/g, "'");
-  if (/\boxirgi\s+7\s+kun\b/.test(text) || /\b7\s+kunlik\b/.test(text)) {
-    return getLastNDaysRange(7);
-  }
-  if (/\bkecha\b/.test(text)) {
-    return getYesterdayRange();
-  }
-  if (/\bbugun\b/.test(text) || /\bbugungi\b/.test(text)) {
-    return getTodayRange();
-  }
-  if (/\b(qancha|nechta)\b/.test(text) && /\b(savdo|sotuv|bitim)\b/.test(text)) {
-    return getLastNDaysRange(30);
-  }
-  return getTodayRange();
+  const parsed = parseDateRangeFromQuestion(question);
+  return parsed;
 }
 
 export function computeSalesAnalytics(
@@ -170,7 +157,7 @@ export function computeSalesAnalytics(
     createdToday: bucket(created),
     wonToday: bucket(won),
     modifiedActiveToday: bucket(modifiedActive),
-    fetchStatus: deals.length === 0 ? "empty_crm" : won.length + created.length + modifiedActive.length === 0 ? "no_filter_match" : "ok",
+    fetchStatus: deals.length === 0 ? "empty_crm" : "ok",
     logReason:
       deals.length === 0
         ? "Bitrix24 bo'sh natija qaytardi"

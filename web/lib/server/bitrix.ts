@@ -242,6 +242,46 @@ export async function fetchDealStages(): Promise<Map<string, DealStageInfo>> {
   return stages;
 }
 
+export interface BitrixUserInfo {
+  id: string;
+  name: string;
+  firstName: string;
+  lastName: string;
+}
+
+function mapUser(raw: CrmRecord): BitrixUserInfo {
+  const firstName = String(raw.NAME ?? "");
+  const lastName = String(raw.LAST_NAME ?? "");
+  return {
+    id: String(raw.ID ?? ""),
+    name: `${firstName} ${lastName}`.trim() || String(raw.NAME ?? ""),
+    firstName,
+    lastName,
+  };
+}
+
+export async function fetchUsersByIds(ids: string[]): Promise<Map<string, BitrixUserInfo>> {
+  const unique = [...new Set(ids.filter(Boolean))];
+  const map = new Map<string, BitrixUserInfo>();
+
+  await Promise.all(
+    unique.slice(0, 100).map(async (id) => {
+      try {
+        const result = (await bitrixCall("user.get", { ID: id })) as CrmRecord | CrmRecord[] | undefined;
+        const user = Array.isArray(result) ? result[0] : result;
+        if (user && user.ID != null) {
+          const info = mapUser(user);
+          map.set(info.id, info);
+        }
+      } catch (e) {
+        safeLog("warn", "user.get xato", { id, error: e instanceof Error ? e.message : "unknown" });
+      }
+    })
+  );
+
+  return map;
+}
+
 export async function searchUsersByName(name: string): Promise<CrmRecord[]> {
   if (!name.trim()) return [];
   try {
@@ -386,6 +426,7 @@ export interface CrmPayload {
   tasks: CrmRecord[];
   mode?: string;
   salesAnalytics?: import("./sales-analytics").SalesAnalytics;
+  crmAnalytics?: import("./crm-analytics").CrmAnalyticsContext;
   salesBlock?: string;
   fetchStatus?: import("./sales-analytics").SalesFetchStatus;
   fetchLogReason?: string;

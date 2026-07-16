@@ -11,6 +11,9 @@
     },
     "app/api/debug/today-sales/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/debug/crm-query/route.ts": {
+      "maxDuration": 60
     }
   }
 }

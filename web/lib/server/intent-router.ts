@@ -113,6 +113,19 @@ const CRM_SIGNALS: string[] = [
   "ochiq bitim",
   "lid soni",
   "konversiya",
+  "jami",
+  "umumiy",
+  "menejer",
+  "mas'ul",
+  "eng katta",
+  "eng ko'p",
+  "eng kop",
+  "hisobot",
+  "yutqazilgan",
+  "voronka",
+  "bosqich",
+  "pipeline",
+  "summasi",
 ];
 
 function normalize(text: string): string {
@@ -174,7 +187,7 @@ export function analyzeRouteIntent(question: string): RouteIntent {
 
   const wantsCrmData =
     crmHits.some((h) => !["sotuv", "savdo"].includes(h)) ||
-    /\b(bugun|kecha|nechta|qancha|nima qildi|oxirgi|7 kun|yopildi|yaratildi|bitim)\b/.test(text) ||
+    /\b(bugun|kecha|nechta|qancha|nima qildi|oxirgi|7 kun|30 kun|yopildi|yaratildi|bitim|jami|umumiy|menejer|eng katta|eng ko'p|eng kop|hisobot|voronka|yutqazilgan|shu oy|shu hafta|shu yil)\b/.test(text) ||
     (domainIntent === "tasks" && hasCapitalizedName(raw)) ||
     (hasPersonActivityQuestion(text) && hasCapitalizedName(raw));
 
