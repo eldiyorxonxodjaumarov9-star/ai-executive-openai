@@ -1,37 +1,29 @@
+import type { AgentId } from "./constants";
+import { loadBitrixDataForAgent } from "./bitrix-data-loader";
+import { BitrixError, type CrmPayload } from "./bitrix";
+import { buildAgentAnalytics } from "./agent-analytics";
 import {
-  BitrixError,
-  fetchAllDealsCompleteWithMeta,
-  fetchContacts,
-  fetchDealStages,
-  fetchLeads,
-  fetchTasks,
-  fetchUsersByIds,
-  type CrmPayload,
-} from "./bitrix";
-import {
-  buildCrmAnalytics,
-  buildCrmAnalyticsPreview,
-  formatCrmAnalyticsContext,
-  type CrmAnalyticsContext,
-} from "./crm-analytics";
+  appendFreshnessToAnswer,
+  buildAgentContextBlock,
+  buildAgentContextStructured,
+} from "./agent-context";
 import { analyzeCrmQuery, isCrmDealQuery, type CrmQueryRouting } from "./crm-query-router";
-import { normalizeDeals } from "./deal-normalizer";
+import { buildCrmAnalyticsPreview, type CrmAnalyticsContext } from "./crm-analytics";
 import type { SalesFetchStatus } from "./sales-analytics";
 
 type CrmRecord = Record<string, unknown>;
 
-const QUICK_MAX = 12;
-
 const DEAL_KEYWORDS = [
   "sotuv", "savdo", "bitim", "jami", "umumiy", "menejer", "eng katta", "eng ko'p", "eng kop",
   "hisobot", "voronka", "yutqazilgan", "yopildi", "yopilgan", "yaratildi", "ochiq", "summasi",
+  "mijoz", "lid", "kontakt", "xodim", "marketing", "moliya", "risk", "voronka",
 ];
 
 const ENTITY_KEYWORDS: Record<string, string[]> = {
   deals: DEAL_KEYWORDS,
-  tasks: ["vazifa", "kim nima qildi", "xodim", "ishchi", "bajarildi", "deadline", "nima qildi", "nima ish", "topshiriq", "faoliyat"],
-  leads: ["lid", "so'rov", "so‘rov", "yangi mijoz", "mijoz so'rovi", "mijoz so‘rovi"],
-  contacts: ["kontakt", "aloqa", "tashkilot", "kompaniya"],
+  tasks: ["vazifa", "kim nima qildi", "xodim", "ishchi", "bajarildi", "deadline", "nima qildi", "nima ish", "topshiriq", "faoliyat", "yuklama"],
+  leads: ["lid", "so'rov", "so‘rov", "yangi mijoz", "mijoz so'rovi", "lead", "marketing", "source", "manba"],
+  contacts: ["kontakt", "aloqa", "tashkilot", "kompaniya", "mijoz"],
 };
 
 const GREETING_RE = /^(salom|assalomu?|hayrli|hello|hi|rahmat|xayr)[\s!.,?]*$/i;
@@ -62,16 +54,6 @@ export function detectQuickCrmEntities(question: string | null): string[] {
   return [...new Set(selected)];
 }
 
-function summaryFrom(deals: CrmRecord[]) {
-  return {
-    leads_count: 0,
-    deals_count: deals.length,
-    contacts_count: 0,
-    tasks_count: 0,
-    total_opportunity: deals.reduce((s, d) => s + Number(d.OPPORTUNITY || 0), 0),
-  };
-}
-
 function emptyPayload(): CrmPayload {
   return {
     fetched_at: new Date().toISOString(),
@@ -87,7 +69,6 @@ function emptyPayload(): CrmPayload {
 export function hasCrmData(data: CrmPayload): boolean {
   if (data.crmAnalytics) return data.crmAnalytics.totalDealsLoaded > 0;
   if (data.salesBlock) return true;
-  if (data.salesAnalytics && data.salesAnalytics.totalDealsFetched > 0) return true;
   return data.leads.length + data.deals.length + data.contacts.length + data.tasks.length > 0;
 }
 
@@ -98,48 +79,67 @@ export interface CrmFetchResult {
   analytics: CrmAnalyticsContext | null;
   fetchStatus: SalesFetchStatus;
   fetchLogReason?: string;
+  fetchedAt?: string;
+  cached?: boolean;
+  limitations?: string[];
+  contextStructured?: Record<string, unknown>;
 }
 
-export async function fetchCrmAnalytics(question: string): Promise<CrmFetchResult> {
+export async function fetchCrmAnalytics(
+  question: string,
+  agent: AgentId,
+  options: { bypassCache?: boolean } = {}
+): Promise<CrmFetchResult> {
   const routing = analyzeCrmQuery(question);
   const payload = emptyPayload();
-  payload.mode = "crm_analytics";
+  payload.mode = "agent_crm_analytics";
 
   try {
-    const [{ deals, paginationPages }, stages] = await Promise.all([
-      fetchAllDealsCompleteWithMeta(),
-      fetchDealStages(),
-    ]);
+    const loaded = await loadBitrixDataForAgent(agent, {
+      bypassCache: options.bypassCache,
+      question,
+    });
 
-    const assigneeIds = deals.map((d) => String(d.ASSIGNED_BY_ID || "")).filter(Boolean);
-    const users = await fetchUsersByIds(assigneeIds);
-    const normalized = normalizeDeals(deals, stages, users);
-    const analytics = buildCrmAnalytics(normalized, routing);
-    const contextBlock = formatCrmAnalyticsContext(analytics, question);
+    const bundle = buildAgentAnalytics(agent, loaded, routing, question);
+    const structured = buildAgentContextStructured(agent, question, routing, loaded, bundle);
+    const contextBlock = buildAgentContextBlock(agent, structured);
 
-    payload.deals = deals.slice(0, QUICK_MAX);
-    payload.summary = summaryFrom(deals);
-    payload.crmAnalytics = analytics;
+    payload.fetched_at = loaded.fetchedAt;
+    payload.deals = loaded.deals.slice(0, 12);
+    payload.leads = loaded.leads.slice(0, 12);
+    payload.contacts = loaded.contacts.slice(0, 12);
+    payload.tasks = loaded.tasks.slice(0, 12);
+    payload.summary = {
+      leads_count: loaded.leads.length,
+      deals_count: loaded.deals.length,
+      contacts_count: loaded.contacts.length,
+      tasks_count: loaded.tasks.length,
+      total_opportunity: loaded.deals.reduce((s, d) => s + Number(d.OPPORTUNITY || 0), 0),
+    };
+    payload.crmAnalytics = bundle.base;
     payload.salesBlock = contextBlock;
-    payload.fetchStatus = deals.length === 0 ? "empty_crm" : "ok";
-    payload.fetchLogReason = analytics.notes.join(" ") || undefined;
+    payload.fetchStatus = loaded.deals.length === 0 && loaded.leads.length === 0 ? "empty_crm" : "ok";
+    payload.fetchLogReason = [...bundle.base.notes, ...loaded.limitations].join(" ") || undefined;
 
-    console.info("[CRM] Analytics", {
+    console.info("[CRM] Agent analytics", {
+      agent,
       question: question.slice(0, 80),
       metric: routing.metric,
-      dateRange: routing.dateRange.label,
-      totalLoaded: analytics.totalDealsLoaded,
-      matched: analytics.matchedDealsCount,
-      pages: paginationPages,
+      cached: loaded.cached,
+      entities: loaded.entitiesFetched,
     });
 
     return {
-      entities: ["deals"],
+      entities: Object.keys(loaded.entitiesFetched),
       data: payload,
       routing,
-      analytics,
+      analytics: bundle.base,
       fetchStatus: payload.fetchStatus as SalesFetchStatus,
       fetchLogReason: payload.fetchLogReason,
+      fetchedAt: loaded.fetchedAt,
+      cached: loaded.cached,
+      limitations: loaded.limitations,
+      contextStructured: structured as unknown as Record<string, unknown>,
     };
   } catch (e) {
     let status: SalesFetchStatus = "webhook_error";
@@ -148,69 +148,45 @@ export async function fetchCrmAnalytics(question: string): Promise<CrmFetchResul
     if (e instanceof BitrixError) {
       status = e.code === "permission_denied" ? "permission_denied" : "webhook_error";
       logReason = e.message;
-      console.error("[CRM] Analytics xato", { code: e.code, reason: logReason });
+      console.error("[CRM] Agent analytics xato", { agent, code: e.code, reason: logReason });
     } else {
-      console.error("[CRM] Analytics kutilmagan xato", { error: e instanceof Error ? e.message : "unknown" });
+      console.error("[CRM] Agent analytics kutilmagan xato", {
+        agent,
+        error: e instanceof Error ? e.message : "unknown",
+      });
     }
 
     payload.fetchStatus = status;
     payload.fetchLogReason = logReason;
-    return { entities: ["deals"], data: payload, routing, analytics: null, fetchStatus: status, fetchLogReason: logReason };
+    return {
+      entities: ["deals"],
+      data: payload,
+      routing,
+      analytics: null,
+      fetchStatus: status,
+      fetchLogReason: logReason,
+    };
   }
 }
 
-export async function fetchCrmForQuick(question: string): Promise<{
-  entities: string[];
-  data: CrmPayload;
-  fetchStatus?: SalesFetchStatus;
-  fetchLogReason?: string;
-  routing?: CrmQueryRouting;
-  analytics?: CrmAnalyticsContext | null;
-}> {
+export async function fetchCrmForQuick(
+  question: string,
+  agent: AgentId,
+  options: { bypassCache?: boolean } = {}
+): Promise<CrmFetchResult & { entities: string[] }> {
   const entities = detectQuickCrmEntities(question);
 
   if (!entities.length) {
-    return { entities: [], data: emptyPayload() };
-  }
-
-  if (entities.includes("deals") || isSalesQuery(question)) {
-    const result = await fetchCrmAnalytics(question);
     return {
-      entities: result.entities,
-      data: result.data,
-      fetchStatus: result.fetchStatus,
-      fetchLogReason: result.fetchLogReason,
-      routing: result.routing,
-      analytics: result.analytics,
+      entities: [],
+      data: emptyPayload(),
+      routing: analyzeCrmQuery(question),
+      analytics: null,
+      fetchStatus: "ok",
     };
   }
 
-  const payload = emptyPayload();
-  const fetchers: Record<string, () => Promise<CrmRecord[]>> = {
-    leads: fetchLeads,
-    contacts: fetchContacts,
-    tasks: fetchTasks,
-  };
-
-  await Promise.all(
-    entities.map(async (name) => {
-      if (!fetchers[name]) return;
-      const items = (await fetchers[name]()).slice(0, QUICK_MAX);
-      if (name === "leads") payload.leads = items;
-      else if (name === "contacts") payload.contacts = items;
-      else if (name === "tasks") payload.tasks = items;
-    })
-  );
-
-  payload.summary = {
-    leads_count: payload.leads.length,
-    deals_count: payload.deals.length,
-    contacts_count: payload.contacts.length,
-    tasks_count: payload.tasks.length,
-    total_opportunity: 0,
-  };
-
-  return { entities, data: payload, fetchStatus: hasCrmData(payload) ? "ok" : "empty_crm" };
+  return fetchCrmAnalytics(question, agent, options);
 }
 
 function formatCrmBlockQuick(data: CrmPayload, mode: "crm_only" | "hybrid" = "crm_only"): string {
@@ -219,15 +195,11 @@ function formatCrmBlockQuick(data: CrmPayload, mode: "crm_only" | "hybrid" = "cr
   const hasData = hasCrmData(data);
   if (!hasData) {
     const reason = data.fetchLogReason || "Bitrix24 dan ma'lumot olinmadi";
-    console.warn("[CRM] Bo'sh context", { reason, mode, fetchStatus: data.fetchStatus });
     if (mode === "hybrid") return `Bitrix24: ${reason}. Bilim bazasi qismini ishlating.`;
     return `Bitrix24: ${reason}.`;
   }
 
-  const lines: string[] = [];
-  if (data.fetched_at) lines.push(`Ma'lumot olingan vaqt: ${data.fetched_at}`, "");
-  lines.push("UMUMIY STATISTIKA:", JSON.stringify(data.summary, null, 2));
-  return lines.join("\n");
+  return `Ma'lumot olingan vaqt: ${data.fetched_at}\n${JSON.stringify(data.summary, null, 2)}`;
 }
 
 export { formatCrmBlockQuick, buildCrmAnalyticsPreview };

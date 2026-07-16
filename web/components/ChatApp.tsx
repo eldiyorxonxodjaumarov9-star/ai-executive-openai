@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { ApiError, checkHealth, newId, quickChat } from "@/lib/api";
+import { ApiError, checkHealth, looksLikeCrmQuestion, newId, quickChat } from "@/lib/api";
 import {
   AGENTS,
   SUGGESTIONS,
@@ -129,6 +129,9 @@ export default function ChatApp() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const conversationIdRef = useRef<string>(newId());
+  const lastQuestionRef = useRef<string>("");
+  const [loadingMessage, setLoadingMessage] = useState("Javob tayyorlanmoqda...");
 
   const agentMeta = AGENTS.find((a) => a.id === agent)!;
   const hasMessages = messages.length > 0;
@@ -149,46 +152,71 @@ export default function ChatApp() {
   }, [messages, loading, hasMessages]);
 
   const send = useCallback(
-    async (questionText?: string) => {
+    async (questionText?: string, options?: { refresh?: boolean }) => {
       const question = (questionText ?? input).trim();
       if (!question || loading) return;
 
       setError("");
-      setInput("");
       setSidebarOpen(false);
+      lastQuestionRef.current = question;
 
-      const userMsg: ChatMessage = {
-        id: newId(),
-        role: "user",
-        content: question,
-        timestamp: Date.now(),
-      };
+      const isCrm = looksLikeCrmQuestion(question) || options?.refresh;
+      setLoadingMessage(
+        isCrm ? "Bitrix24 ma'lumotlari yangilanmoqda..." : "Javob tayyorlanmoqda..."
+      );
 
-      const next = [...messages, userMsg];
-      setMessages(next);
-      persistMessages(agent, next);
+      let next = messages;
+      if (!options?.refresh) {
+        const userMsg: ChatMessage = {
+          id: newId(),
+          role: "user",
+          content: question,
+          timestamp: Date.now(),
+        };
+        next = [...messages, userMsg];
+        setMessages(next);
+        persistMessages(agent, next);
+        setInput("");
+      }
       setLoading(true);
 
       try {
-        const answer = await quickChat(agent, question);
+        const answer = await quickChat(agent, question, {
+          refresh: options?.refresh,
+          conversationId: conversationIdRef.current,
+        });
         const assistantMsg: ChatMessage = {
           id: newId(),
           role: "assistant",
           content: answer,
           timestamp: Date.now(),
         };
-        const updated = [...next, assistantMsg];
+        const last = next[next.length - 1];
+        const updated =
+          options?.refresh && last?.role === "assistant"
+            ? [...next.slice(0, -1), assistantMsg]
+            : [...next, assistantMsg];
         setMessages(updated);
         persistMessages(agent, updated);
       } catch (e) {
         setError(e instanceof ApiError ? e.message : "OpenAI bilan javob olishda xato yuz berdi.");
       } finally {
         setLoading(false);
+        setLoadingMessage("Javob tayyorlanmoqda...");
         requestAnimationFrame(() => inputRef.current?.focus());
       }
     },
     [agent, input, loading, messages]
   );
+
+  const refreshData = useCallback(() => {
+    const q = lastQuestionRef.current || messages.filter((m) => m.role === "user").pop()?.content;
+    if (!q) {
+      setError("Avval CRM savol bering, keyin yangilang.");
+      return;
+    }
+    void send(q, { refresh: true });
+  }, [messages, send]);
 
   const clearChat = () => {
     localStorage.removeItem(`${CHAT_PREFIX}${agent}`);
@@ -210,6 +238,7 @@ export default function ChatApp() {
 
   const selectAgent = (id: AgentId) => {
     setAgent(id);
+    conversationIdRef.current = newId();
     setSidebarOpen(false);
   };
 
@@ -283,6 +312,15 @@ export default function ChatApp() {
               </option>
             ))}
           </select>
+          <button
+            type="button"
+            className={styles.refreshBtn}
+            onClick={refreshData}
+            disabled={loading}
+            title="Bitrix24 ma'lumotlarini yangilash"
+          >
+            Ma&apos;lumotlarni yangilash
+          </button>
         </header>
 
         <div className={styles.chatScroll}>
@@ -349,13 +387,24 @@ export default function ChatApp() {
                     {agentMeta.short}
                   </div>
                   <div className={`${styles.messageBody} ${styles.typing}`}>
-                    Javob tayyorlanmoqda...
+                    {loadingMessage}
                   </div>
                 </article>
               )}
               <div ref={bottomRef} className={styles.threadEnd} />
             </div>
           )}
+        </div>
+
+        <div className={styles.composerToolbar}>
+          <button
+            type="button"
+            className={styles.refreshBtnDesktop}
+            onClick={refreshData}
+            disabled={loading}
+          >
+            Ma&apos;lumotlarni yangilash
+          </button>
         </div>
 
         <Composer

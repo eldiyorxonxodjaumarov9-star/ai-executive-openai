@@ -5,14 +5,20 @@ import { BitrixError } from "@/lib/server/bitrix";
 import { OpenAIError } from "@/lib/server/openai";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 type RouteContext = { params: Promise<{ agent: string }> };
 
 export async function POST(req: NextRequest, context: RouteContext) {
   const { agent: agentParam } = await context.params;
 
-  let body: { question?: string };
+  let body: {
+    question?: string;
+    message?: string;
+    agentId?: string;
+    conversationId?: string;
+    refresh?: boolean;
+  };
   try {
     body = await req.json();
   } catch {
@@ -22,7 +28,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
     );
   }
 
-  const question = (body.question || "").trim();
+  const question = (body.message || body.question || "").trim();
   if (!question) {
     return NextResponse.json(
       { success: false, detail: { code: "validation_error", message: "Savol bo'sh bo'lishi mumkin emas." } },
@@ -31,24 +37,45 @@ export async function POST(req: NextRequest, context: RouteContext) {
   }
 
   try {
-    const agent = normalizeAgent(agentParam);
-    const { answer, crmSummary, intent, domainIntent, brainFiles, knowledgeFiles, crmEntities } =
-      await runQuickAnswer(agent, question);
+    const agentFromBody = body.agentId ? normalizeAgent(body.agentId) : normalizeAgent(agentParam);
+    const agentFromUrl = normalizeAgent(agentParam);
+
+    if (body.agentId && agentFromBody !== agentFromUrl) {
+      return NextResponse.json(
+        {
+          success: false,
+          detail: {
+            code: "agent_mismatch",
+            message: "URL agent va body agentId mos kelmaydi.",
+          },
+        },
+        { status: 400 }
+      );
+    }
+
+    const agent = agentFromBody;
+    const result = await runQuickAnswer(agent, question, {
+      bypassCache: Boolean(body.refresh),
+      conversationId: body.conversationId,
+    });
 
     return NextResponse.json({
       success: true,
       agent,
+      agentId: agent,
       agent_display_name: AGENT_DISPLAY_NAMES[agent],
+      conversationId: body.conversationId || null,
       mode: "quick_answer",
-      intent,
-      domain_intent: domainIntent,
+      intent: result.intent,
+      domain_intent: result.domainIntent,
       question,
-      answer,
-      crm_summary: crmSummary,
+      answer: result.answer,
+      crm_summary: result.crmSummary,
+      data_freshness: result.dataFreshness || null,
       routing: {
-        brain_files: brainFiles,
-        knowledge_files: knowledgeFiles,
-        crm_entities: crmEntities,
+        brain_files: result.brainFiles,
+        knowledge_files: result.knowledgeFiles,
+        crm_entities: result.crmEntities,
       },
     });
   } catch (e) {

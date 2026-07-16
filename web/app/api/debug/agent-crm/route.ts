@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { AGENT_DISPLAY_NAMES, normalizeAgent } from "@/lib/server/constants";
 import { analyzeCrmQuery } from "@/lib/server/crm-query-router";
 import { fetchCrmAnalytics } from "@/lib/server/crm-router";
 import { buildCrmAnalyticsPreview } from "@/lib/server/crm-analytics";
@@ -7,17 +8,21 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function GET(req: NextRequest) {
+  const agentParam = req.nextUrl.searchParams.get("agent") || "ceo";
   const q = req.nextUrl.searchParams.get("q")?.trim();
+  const refresh = req.nextUrl.searchParams.get("refresh") === "1";
+
   if (!q) {
     return NextResponse.json(
-      { ok: false, error: "Parametr 'q' talab qilinadi", details: "Masalan: ?q=Jami nechta bitim bor" },
+      { ok: false, error: "Parametr 'q' talab qilinadi", details: "?agent=sales&q=..." },
       { status: 400 }
     );
   }
 
   try {
+    const agent = normalizeAgent(agentParam);
     const routing = analyzeCrmQuery(q);
-    const result = await fetchCrmAnalytics(q, "ceo");
+    const result = await fetchCrmAnalytics(q, agent, { bypassCache: refresh });
 
     if (result.fetchStatus === "webhook_error" || result.fetchStatus === "permission_denied") {
       return NextResponse.json(
@@ -30,11 +35,12 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const analytics = result.analytics;
-
     return NextResponse.json({
       ok: true,
-      query: q,
+      agent: {
+        id: agent,
+        name: AGENT_DISPLAY_NAMES[agent],
+      },
       routing: {
         intent: routing.intent,
         domain: routing.domain,
@@ -43,38 +49,30 @@ export async function GET(req: NextRequest) {
           from: routing.dateRange.fromIso,
           to: routing.dateRange.toIso,
           label: routing.dateRange.label,
-          explicit: routing.dateRange.explicit,
         },
-        employee: routing.employee,
-        stage: routing.stage,
         aggregation: routing.aggregation,
-        dealStatusFilter: routing.dealStatusFilter,
-        matchedKeywords: routing.matchedKeywords,
       },
-      filters: {
-        dealStatusFilter: routing.dealStatusFilter,
-        dateExplicit: routing.dateRange.explicit,
-        employee: routing.employee,
+      dataFreshness: {
+        fetchedAt: result.fetchedAt,
+        timezone: "Asia/Tashkent",
+        source: "Bitrix24",
+        cached: result.cached ?? false,
       },
-      totalDealsLoaded: analytics?.totalDealsLoaded ?? 0,
-      matchedDeals: analytics?.matchedDealsCount ?? 0,
-      analytics: analytics ? buildCrmAnalyticsPreview(analytics) : {},
-      contextPreview: analytics
-        ? {
-            hasContext: true,
-            contextLength: result.data.salesBlock?.length ?? 0,
-            summary: analytics.summary,
-            periodStats: analytics.periodStats,
-            notes: analytics.notes,
-          }
-        : { hasContext: false },
+      entitiesFetched: result.data.summary,
+      analytics: result.analytics ? buildCrmAnalyticsPreview(result.analytics) : {},
+      contextPreview: {
+        hasContext: Boolean(result.data.salesBlock),
+        contextLength: result.data.salesBlock?.length ?? 0,
+        structured: result.contextStructured ?? null,
+      },
+      limitations: result.limitations ?? [],
       error: null,
     });
   } catch (e) {
-    const message = e instanceof Error ? e.message : "CRM query diagnostika xatosi";
-    console.error("[debug/crm-query]", message);
+    const message = e instanceof Error ? e.message : "Agent CRM diagnostika xatosi";
+    console.error("[debug/agent-crm]", message);
     return NextResponse.json(
-      { ok: false, error: "CRM diagnostika bajarilmadi", details: message },
+      { ok: false, error: "Diagnostika bajarilmadi", details: message },
       { status: 500 }
     );
   }

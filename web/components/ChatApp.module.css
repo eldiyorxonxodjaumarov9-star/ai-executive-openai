@@ -271,6 +271,60 @@
   font-size: 0.9rem;
 }
 
+.refreshBtn {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.8rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.refreshBtn:hover:not(:disabled) {
+  background: var(--bg-sidebar);
+}
+
+.refreshBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.composerToolbar {
+  display: flex;
+  justify-content: center;
+  padding: 0 16px 8px;
+  max-width: 860px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.refreshBtnDesktop {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.refreshBtnDesktop:hover:not(:disabled) {
+  background: var(--bg-sidebar);
+  color: var(--text);
+}
+
+.refreshBtnDesktop:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ── Welcome ── */
 .welcome {
   min-height: 100%;
@@ -673,6 +727,14 @@
 
   .topBar {
     display: flex;
+  }
+
+  .refreshBtnDesktop {
+    display: none;
+  }
+
+  .composerToolbar {
+    display: none;
   }
 
   .welcomeTitle {

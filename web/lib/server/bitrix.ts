@@ -306,7 +306,7 @@ export async function fetchLeads(): Promise<CrmRecord[]> {
   const { bitrixLeadsLimit } = getEnv();
   return listAll(
     "crm.lead.list",
-    ["ID", "TITLE", "NAME", "LAST_NAME", "OPPORTUNITY", "DATE_CREATE", "DATE_MODIFY", "ASSIGNED_BY_ID"],
+    ["ID", "TITLE", "NAME", "LAST_NAME", "OPPORTUNITY", "DATE_CREATE", "DATE_MODIFY", "ASSIGNED_BY_ID", "SOURCE_ID", "STATUS_ID"],
     bitrixLeadsLimit,
     { DATE_MODIFY: "DESC" }
   );
@@ -321,10 +321,43 @@ export async function fetchContacts(): Promise<CrmRecord[]> {
   const { bitrixContactsLimit } = getEnv();
   return listAll(
     "crm.contact.list",
-    ["ID", "NAME", "LAST_NAME", "PHONE", "EMAIL", "DATE_CREATE", "DATE_MODIFY"],
+    ["ID", "NAME", "LAST_NAME", "PHONE", "EMAIL", "DATE_CREATE", "DATE_MODIFY", "COMPANY_ID", "SOURCE_ID"],
     bitrixContactsLimit,
     { DATE_MODIFY: "DESC" }
   );
+}
+
+export async function fetchCompanies(): Promise<CrmRecord[]> {
+  const { bitrixContactsLimit } = getEnv();
+  try {
+    return await listAll(
+      "crm.company.list",
+      ["ID", "TITLE", "DATE_CREATE", "DATE_MODIFY", "ASSIGNED_BY_ID"],
+      bitrixContactsLimit,
+      { DATE_MODIFY: "DESC" }
+    );
+  } catch (e) {
+    safeLog("warn", "crm.company.list mavjud emas yoki ruxsat yo'q", {
+      error: e instanceof Error ? e.message : "unknown",
+    });
+    return [];
+  }
+}
+
+export async function fetchActivities(): Promise<CrmRecord[]> {
+  try {
+    const raw = await bitrixCallRaw("crm.activity.list", {
+      order: { CREATED: "DESC" },
+      select: ["ID", "SUBJECT", "DESCRIPTION", "CREATED", "COMPLETED", "OWNER_TYPE_ID", "OWNER_ID"],
+    });
+    const items = Array.isArray(raw.result) ? raw.result : [];
+    return items.slice(0, 50).map(normalizeRecord);
+  } catch (e) {
+    safeLog("warn", "crm.activity.list mavjud emas yoki ruxsat yo'q", {
+      error: e instanceof Error ? e.message : "unknown",
+    });
+    return [];
+  }
 }
 
 export async function fetchTasks(): Promise<CrmRecord[]> {

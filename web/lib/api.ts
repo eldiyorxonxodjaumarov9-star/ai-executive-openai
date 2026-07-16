@@ -43,14 +43,14 @@ function parseError(status: number, body: string): ApiError {
     if (code === "ai_config_error")
       return new ApiError("OpenAI sozlamasi to'liq emas — administrator bilan bog'laning.", code, status);
     if (code === "ai_error") return new ApiError(message, code, status);
-    if (code === "agent_invalid") return new ApiError(message, code, status);
+    if (code === "agent_invalid" || code === "agent_mismatch") return new ApiError(message, code, status);
     return new ApiError(message, code, status);
   } catch {
     return new ApiError(`Server xatosi (${status})`, undefined, status);
   }
 }
 
-async function request<T>(path: string, options: RequestInit = {}, timeoutMs = 60000): Promise<T> {
+async function request<T>(path: string, options: RequestInit = {}, timeoutMs = 90000): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -81,14 +81,32 @@ export interface HealthResponse {
   ai_model?: string;
 }
 
+export interface ChatRequestOptions {
+  refresh?: boolean;
+  conversationId?: string;
+}
+
 export async function checkHealth(): Promise<HealthResponse> {
   return request<HealthResponse>("/api/health", { method: "GET" }, 15000);
 }
 
-export async function quickChat(agent: AgentId, question: string): Promise<string> {
+export async function quickChat(
+  agent: AgentId,
+  question: string,
+  options: ChatRequestOptions = {}
+): Promise<string> {
+  const conversationId = options.conversationId || `conv-${agent}-${Date.now()}`;
   const data = await request<{ success: boolean; answer?: string; error?: string }>(
     `/api/chat/agent/${agent}`,
-    { method: "POST", body: JSON.stringify({ question }) }
+    {
+      method: "POST",
+      body: JSON.stringify({
+        agentId: agent,
+        message: question,
+        conversationId,
+        refresh: Boolean(options.refresh),
+      }),
+    }
   );
   if (!data.success) throw new ApiError("OpenAI bilan javob olishda xato yuz berdi.");
   return data.answer || "Ma'lumot yetarli emas.";
@@ -96,4 +114,11 @@ export async function quickChat(agent: AgentId, question: string): Promise<strin
 
 export function newId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+export function looksLikeCrmQuestion(question: string): boolean {
+  const t = question.toLowerCase();
+  return /\b(bugun|bitim|savdo|sotuv|jami|mijoz|menejer|hisobot|voronka|moliya|xodim|marketing|lid|kontakt|yopil|ochiq|summasi|risk)\b/.test(
+    t
+  );
 }

@@ -9,6 +9,8 @@ import {
   normalizeAgent,
   type AgentId,
 } from "./constants";
+import { AGENT_PROFESSIONAL_INSTRUCTIONS } from "./agent-crm-config";
+import { appendFreshnessToAnswer } from "./agent-context";
 import { fetchCrmForQuick, formatCrmBlockQuick, hasCrmData } from "./crm-router";
 import { analyzeRouteIntent, type IntentType } from "./intent-router";
 import { loadKnowledgeForIntent } from "./knowledge-router";
@@ -17,6 +19,11 @@ import { loadAgentPrompt } from "./prompts";
 import { sanitizeUserOutput } from "./sanitize";
 import { getEnv } from "./env";
 import type { SalesFetchStatus } from "./sales-analytics";
+
+export interface QuickAnswerOptions {
+  bypassCache?: boolean;
+  conversationId?: string;
+}
 
 export interface QuickAnswerResult {
   answer: string;
@@ -27,6 +34,7 @@ export interface QuickAnswerResult {
   knowledgeFiles: string[];
   crmEntities: string[];
   crmFetchStatus?: SalesFetchStatus;
+  dataFreshness?: { fetchedAt: string; cached: boolean };
 }
 
 function instructionForIntent(intent: IntentType): string {
@@ -45,7 +53,11 @@ function instructionForIntent(intent: IntentType): string {
 function buildSystemPrompt(agent: AgentId, intent: IntentType): string {
   const rolePrompt = loadAgentPrompt(agent);
   const display = AGENT_DISPLAY_NAMES[agent];
+  const pro = AGENT_PROFESSIONAL_INSTRUCTIONS[agent];
+
   return `${rolePrompt}
+
+${pro}
 
 Siz ${display} sifatida tezkor savol-javob rejimidasiz.
 
@@ -75,15 +87,18 @@ function buildUserPrompt(
   }
 
   if (intent === "crm_question" || intent === "hybrid_question") {
-    parts.push("=== BITRIX24 (jonli ma'lumot) ===", crmBlock, "");
+    parts.push("=== BITRIX24 (jonli ma'lumot — SOURCE OF TRUTH) ===", crmBlock, "");
   }
 
   parts.push("=== SAVOL ===", question, "");
 
   if (intent === "crm_question") {
-    parts.push("Faqat Bitrix24 ma'lumotlariga tayangan holda javob bering.");
+    parts.push(
+      "Faqat yuqoridagi Bitrix24 analytics ma'lumotlariga tayangan holda javob bering.",
+      "Oldingi suhbatdagi raqamlarni ishlatmang."
+    );
   } else if (intent === "hybrid_question") {
-    parts.push("Bilim bazasi va Bitrix24 ma'lumotlarini birlashtirib javob bering.");
+    parts.push("Bilim bazasi va Bitrix24 analytics ni birlashtirib javob bering.");
   } else {
     parts.push("Bilim bazasiga tayangan holda javob bering.");
   }
@@ -91,7 +106,11 @@ function buildUserPrompt(
   return parts.join("\n");
 }
 
-export async function runQuickAnswer(agentName: string, question: string): Promise<QuickAnswerResult> {
+export async function runQuickAnswer(
+  agentName: string,
+  question: string,
+  options: QuickAnswerOptions = {}
+): Promise<QuickAnswerResult> {
   const agent = normalizeAgent(agentName);
   const q = question.trim();
   if (!q) throw new Error("Savol bo'sh bo'lishi mumkin emas.");
@@ -107,6 +126,8 @@ export async function runQuickAnswer(agentName: string, question: string): Promi
   let crmSummary: Record<string, unknown> = {};
   let crmBlock = "";
   let crmFetchStatus: SalesFetchStatus | undefined;
+  let fetchedAt: string | undefined;
+  let cached = false;
 
   if (route.type === "casual_chat") {
     const brain = loadBrainForIntent(agent, route.domainIntent, "casual");
@@ -119,16 +140,27 @@ export async function runQuickAnswer(agentName: string, question: string): Promi
     const knowledge = loadKnowledgeForIntent(agent, route.domainIntent);
     knowledgeFiles = knowledge.files;
     knowledgeText = knowledge.text;
-  } else if (route.type === "crm_question") {
-    const { entities, data, fetchStatus, fetchLogReason } = await fetchCrmForQuick(q);
-    crmEntities = entities;
-    crmSummary = data.summary as unknown as Record<string, unknown>;
-    crmFetchStatus = fetchStatus;
-    crmBlock = formatCrmBlockQuick(data, "crm_only");
+  } else if (route.type === "crm_question" || route.type === "hybrid_question") {
+    if (route.type === "hybrid_question") {
+      const brain = loadBrainForIntent(agent, route.domainIntent, "full");
+      brainFiles = brain.files;
+      brainText = brain.text;
+      const knowledge = loadKnowledgeForIntent(agent, route.domainIntent);
+      knowledgeFiles = knowledge.files;
+      knowledgeText = knowledge.text;
+    }
 
-    if (fetchStatus === "webhook_error" || fetchStatus === "permission_denied") {
+    const crmResult = await fetchCrmForQuick(q, agent, { bypassCache: options.bypassCache });
+    crmEntities = crmResult.entities;
+    crmSummary = crmResult.data.summary as unknown as Record<string, unknown>;
+    crmFetchStatus = crmResult.fetchStatus;
+    crmBlock = formatCrmBlockQuick(crmResult.data, route.type === "hybrid_question" ? "hybrid" : "crm_only");
+    fetchedAt = crmResult.fetchedAt;
+    cached = crmResult.cached ?? false;
+
+    if (crmFetchStatus === "webhook_error" || crmFetchStatus === "permission_denied") {
       const msg =
-        fetchStatus === "permission_denied"
+        crmFetchStatus === "permission_denied"
           ? "Bitrix24 dan ma'lumot o'qish uchun ruxsat yetarli emas."
           : "Bitrix24 bilan hozir bog'lanib bo'lmadi.";
       return {
@@ -143,7 +175,7 @@ export async function runQuickAnswer(agentName: string, question: string): Promi
       };
     }
 
-    if (!hasCrmData(data) && fetchStatus === "empty_crm") {
+    if (!hasCrmData(crmResult.data) && crmFetchStatus === "empty_crm") {
       return {
         answer: sanitizeUserOutput("Bitrix24 da hozircha bitimlar mavjud emas."),
         intent: route.type,
@@ -155,18 +187,6 @@ export async function runQuickAnswer(agentName: string, question: string): Promi
         crmFetchStatus,
       };
     }
-  } else {
-    const brain = loadBrainForIntent(agent, route.domainIntent, "full");
-    brainFiles = brain.files;
-    brainText = brain.text;
-    const knowledge = loadKnowledgeForIntent(agent, route.domainIntent);
-    knowledgeFiles = knowledge.files;
-    knowledgeText = knowledge.text;
-    const { entities, data, fetchStatus } = await fetchCrmForQuick(q);
-    crmEntities = entities;
-    crmSummary = data.summary as unknown as Record<string, unknown>;
-    crmFetchStatus = fetchStatus;
-    crmBlock = formatCrmBlockQuick(data, "hybrid");
   }
 
   if ((route.type === "crm_question" || route.type === "hybrid_question") && !crmBlock.trim()) {
@@ -186,8 +206,13 @@ export async function runQuickAnswer(agentName: string, question: string): Promi
   const { quickMaxTokens } = getEnv();
   const raw = await chatCompletion(systemPrompt, userPrompt, quickMaxTokens);
 
+  let answer = sanitizeUserOutput(raw);
+  if ((route.type === "crm_question" || route.type === "hybrid_question") && fetchedAt) {
+    answer = appendFreshnessToAnswer(answer, fetchedAt);
+  }
+
   return {
-    answer: sanitizeUserOutput(raw),
+    answer,
     intent: route.type,
     domainIntent: route.domainIntent,
     crmSummary,
@@ -195,6 +220,7 @@ export async function runQuickAnswer(agentName: string, question: string): Promi
     knowledgeFiles,
     crmEntities,
     crmFetchStatus,
+    dataFreshness: fetchedAt ? { fetchedAt, cached } : undefined,
   };
 }
 
