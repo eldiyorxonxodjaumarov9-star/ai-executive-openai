@@ -38,7 +38,7 @@ function normalize(text: string): string {
 }
 
 function inferMetric(text: string): CrmMetric {
-  if (/\b(bugun|bugungi).*(sotuv|savdo)\b/.test(text) || /\bqancha sotuv\b/.test(text)) return "today_sales";
+  if (/\b(bugun|bugungi).*(sotuv|savdo)\b/.test(text) || /\bqancha sotuv\b/.test(text) || /\bbugungi sotuvlar\b/.test(text)) return "today_sales";
   if (/\b(direktor|rahbar|bosh direktor|ceo).*(hisobot|xulosa)\b/.test(text) || /\bumumiy sotuv hisoboti\b/.test(text)) {
     return "executive_report";
   }
@@ -91,7 +91,7 @@ function inferDealStatusFilter(text: string, metric: CrmMetric, dateExplicit: bo
 
 function extractEmployeeName(question: string): string | null {
   const skip = new Set([
-    "Bugun", "Kecha", "Oxirgi", "Nechta", "Qancha", "Kim", "Savdo", "Sotuv", "Bitim",
+    "Bugun", "Bugungi", "Kecha", "Oxirgi", "Nechta", "Qancha", "Kim", "Savdo", "Sotuv", "Bitim",
     "Jami", "Umumiy", "Eng", "Shu", "Direktor", "Menejer", "Qaysi",
   ]);
   const words = question.split(/\s+/);
