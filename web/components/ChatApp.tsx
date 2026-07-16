@@ -13,6 +13,7 @@ import {
 import styles from "./ChatApp.module.css";
 
 const CHAT_PREFIX = "aiep_chat_";
+const TEXTAREA_MAX_HEIGHT = 180;
 
 function loadMessages(agent: AgentId): ChatMessage[] {
   if (typeof window === "undefined") return [];
@@ -33,8 +34,87 @@ function getUserName(): string {
   return localStorage.getItem(USER_NAME_KEY) || "Foydalanuvchi";
 }
 
-function saveUserName(name: string) {
-  localStorage.setItem(USER_NAME_KEY, name.trim() || "Foydalanuvchi");
+function SendIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M12 19V5M5 12l7-7 7 7"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function ComposerSpinner() {
+  return <span className={styles.composerSpinner} aria-label="Yuklanmoqda" role="status" />;
+}
+
+interface ComposerProps {
+  inputRef: React.RefObject<HTMLTextAreaElement | null>;
+  value: string;
+  onChange: (value: string) => void;
+  onSend: () => void;
+  loading: boolean;
+  error: string;
+}
+
+function Composer({ inputRef, value, onChange, onSend, loading, error }: ComposerProps) {
+  const adjustHeight = useCallback(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const next = Math.min(el.scrollHeight, TEXTAREA_MAX_HEIGHT);
+    el.style.height = `${Math.max(next, 52)}px`;
+  }, [inputRef]);
+
+  useEffect(() => {
+    adjustHeight();
+  }, [value, adjustHeight]);
+
+  const canSend = !loading && value.trim().length > 0;
+
+  return (
+    <footer className={styles.composerWrap}>
+      <div className={styles.composer}>
+        {error ? <div className={styles.composerError}>{error}</div> : null}
+        <div className={styles.composerField}>
+          <textarea
+            ref={inputRef}
+            className={styles.composerInput}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="Savolingizni yozing..."
+            rows={1}
+            disabled={loading}
+            aria-label="Savol yozish maydoni"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                if (canSend) onSend();
+              }
+            }}
+          />
+          {loading ? (
+            <ComposerSpinner />
+          ) : (
+            <button
+              type="button"
+              className={styles.composerSend}
+              onClick={onSend}
+              disabled={!canSend}
+              aria-label="Yuborish"
+            >
+              <SendIcon />
+            </button>
+          )}
+        </div>
+        <p className={styles.composerHint}>Enter — yuborish · Shift+Enter — yangi qator</p>
+      </div>
+    </footer>
+  );
 }
 
 export default function ChatApp() {
@@ -104,6 +184,7 @@ export default function ChatApp() {
         setError(e instanceof ApiError ? e.message : "OpenAI bilan javob olishda xato yuz berdi.");
       } finally {
         setLoading(false);
+        requestAnimationFrame(() => inputRef.current?.focus());
       }
     },
     [agent, input, loading, messages]
@@ -166,7 +247,7 @@ export default function ChatApp() {
               onClick={() => selectAgent(a.id)}
               disabled={loading}
             >
-              <span className={styles.agentDot} style={{ background: a.color }} />
+              <span className={`${styles.agentDot} ${styles[`agentDot_${a.id}`]}`} />
               <span className={styles.agentItemLabel}>{a.label}</span>
             </button>
           ))}
@@ -204,105 +285,87 @@ export default function ChatApp() {
           </select>
         </header>
 
-        {!hasMessages ? (
-          <div className={styles.welcome}>
-            <div className={styles.welcomeInner}>
-              <div className={styles.welcomeIcon} style={{ background: agentMeta.color }}>
-                {agentMeta.short}
-              </div>
-              <h1 className={styles.welcomeTitle}>Salom!</h1>
-              <p className={styles.welcomeSub}>
-                {agentMeta.label} bilan Bitrix24 ma&apos;lumotlari asosida savolingizga javob oling.
-              </p>
-              <div className={styles.suggestions}>
-                {SUGGESTIONS.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    className={styles.suggestionChip}
-                    onClick={() => send(s)}
-                    disabled={loading}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className={styles.thread}>
-            {messages.map((m) => (
-              <article
-                key={m.id}
-                className={`${styles.message} ${m.role === "user" ? styles.messageUser : styles.messageAi}`}
-              >
-                <div
-                  className={styles.messageAvatar}
-                  style={m.role === "assistant" ? { background: agentMeta.color } : undefined}
-                >
-                  {m.role === "user" ? userInitial : agentMeta.short}
-                </div>
-                <div className={styles.messageBody}>
-                  {m.role === "assistant" ? (
-                    <>
-                      <ReactMarkdown>{m.content}</ReactMarkdown>
-                      <button
-                        type="button"
-                        className={styles.copyBtn}
-                        onClick={() => copyAnswer(m.content, m.id)}
-                      >
-                        {copiedId === m.id ? "Nusxalandi" : "Nusxalash"}
-                      </button>
-                    </>
-                  ) : (
-                    <p>{m.content}</p>
-                  )}
-                </div>
-              </article>
-            ))}
-            {loading && (
-              <article className={`${styles.message} ${styles.messageAi}`}>
-                <div className={styles.messageAvatar} style={{ background: agentMeta.color }}>
+        <div className={styles.chatScroll}>
+          {!hasMessages ? (
+            <div className={styles.welcome}>
+              <div className={styles.welcomeInner}>
+                <div className={`${styles.welcomeIcon} ${styles[`welcomeIcon_${agent}`]}`}>
                   {agentMeta.short}
                 </div>
-                <div className={`${styles.messageBody} ${styles.typing}`}>
-                  Javob tayyorlanmoqda...
+                <h1 className={styles.welcomeTitle}>Salom!</h1>
+                <p className={styles.welcomeSub}>
+                  {agentMeta.label} bilan Bitrix24 ma&apos;lumotlari asosida savolingizga javob oling.
+                </p>
+                <div className={styles.suggestions}>
+                  {SUGGESTIONS.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      className={styles.suggestionChip}
+                      onClick={() => send(s)}
+                      disabled={loading}
+                    >
+                      {s}
+                    </button>
+                  ))}
                 </div>
-              </article>
-            )}
-            <div ref={bottomRef} />
-          </div>
-        )}
-
-        <div className={styles.bottomComposer}>
-          {error && <div className={styles.error}>{error}</div>}
-          <div className={styles.inputBox}>
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Savolingizni yozing..."
-              rows={1}
-              disabled={loading}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  send();
-                }
-              }}
-            />
-            <button
-              type="button"
-              className={styles.sendCircle}
-              onClick={() => send()}
-              disabled={loading || !input.trim()}
-              aria-label="Yuborish"
-              style={{ background: agentMeta.color }}
-            >
-              ↑
-            </button>
-          </div>
+              </div>
+            </div>
+          ) : (
+            <div className={styles.thread}>
+              {messages.map((m) => (
+                <article
+                  key={m.id}
+                  className={`${styles.message} ${m.role === "user" ? styles.messageUser : styles.messageAi}`}
+                >
+                  <div
+                    className={`${styles.messageAvatar} ${
+                      m.role === "assistant" ? styles[`messageAvatar_${agent}`] : styles.messageAvatarUser
+                    }`}
+                  >
+                    {m.role === "user" ? userInitial : agentMeta.short}
+                  </div>
+                  <div className={styles.messageBody}>
+                    {m.role === "assistant" ? (
+                      <>
+                        <ReactMarkdown>{m.content}</ReactMarkdown>
+                        <button
+                          type="button"
+                          className={styles.copyBtn}
+                          onClick={() => copyAnswer(m.content, m.id)}
+                        >
+                          {copiedId === m.id ? "Nusxalandi" : "Nusxalash"}
+                        </button>
+                      </>
+                    ) : (
+                      <p>{m.content}</p>
+                    )}
+                  </div>
+                </article>
+              ))}
+              {loading && (
+                <article className={`${styles.message} ${styles.messageAi}`}>
+                  <div className={`${styles.messageAvatar} ${styles[`messageAvatar_${agent}`]}`}>
+                    {agentMeta.short}
+                  </div>
+                  <div className={`${styles.messageBody} ${styles.typing}`}>
+                    Javob tayyorlanmoqda...
+                  </div>
+                </article>
+              )}
+              <div ref={bottomRef} className={styles.threadEnd} />
+            </div>
+          )}
         </div>
+
+        <Composer
+          inputRef={inputRef}
+          value={input}
+          onChange={setInput}
+          onSend={() => send()}
+          loading={loading}
+          error={error}
+        />
       </main>
     </div>
   );
