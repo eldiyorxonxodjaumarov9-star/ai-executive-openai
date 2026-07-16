@@ -28,11 +28,24 @@ export function normalizeAgent(name: string): AgentId {
   return normalized as AgentId;
 }
 
-export const QUICK_ANSWER_INSTRUCTION = `Foydalanuvchi savoliga faqat kerakli ma'lumot asosida qisqa, aniq va o'zbek tilida javob ber.
-Javob odatda 2–8 jumlada bo'lsin. Katta hisobot yozma. Keraksiz bo'limlar ochma.
-Jadval, uzun ro'yxat va keng risk tahlilini faqat savol aniq talab qilsa ishlat.
-Ichki CRM kodlarini ko'rsatma — faqat o'zbekcha tushunarli nomlar.
-Inglizcha va ruscha so'z ishlatma.
-Agar ma'lumot yetarli bo'lmasa: 'Bu savolga aniq javob berish uchun CRMda yetarli ma'lumot topilmadi.'`;
+export const CASUAL_ANSWER_INSTRUCTION = `Oddiy suhbat rejimidasiz. Tabiiy, iliq va qisqa javob bering (2–6 jumla).
+Agent roli va imkoniyatlaringizni tushuntiring. Bitrix24 yoki CRM haqida gapirmang.
+"CRMda ma'lumot topilmadi" kabi iboralarni hech qachon ishlatmang.`;
+
+export const KNOWLEDGE_ANSWER_INSTRUCTION = `Bilim bazasi va agent promptiga tayangan holda javob bering (2–8 jumla).
+Aniq, foydali va o'zbek tilida bo'lsin. CRM ma'lumotlari talab qilinmaydi — ularni o'zingizdan uydirmang.
+"CRMda ma'lumot topilmadi" iborasini ishlatmang.`;
+
+export const CRM_ANSWER_INSTRUCTION = `Bitrix24 dan olingan jonli ma'lumotlarga asoslanib javob bering (2–8 jumla).
+Raqamlar aniq bo'lsin. Faqat berilgan ma'lumotdan foydalaning — taxmin qilmang.
+Agar Bitrix24 ma'lumoti bo'sh yoki yetarli bo'lmasa, faqat shunday yozing:
+"Bitrix24 da bu savolga javob beradigan aniq ma'lumot topilmadi."
+Ichki CRM kodlarini ko'rsatmang.`;
+
+export const HYBRID_ANSWER_INSTRUCTION = `Bilim bazasi qoidalarini va Bitrix24 jonli ma'lumotlarini birlashtirib javob bering (3–10 jumla).
+Avval qoida/norma, keyin faktik ma'lumot. Ikkalasini bog'lab tushuntiring.
+Agar Bitrix24 dan ma'lumot topilmasa:
+"Bitrix24 da bu savol bo'yicha aniq ma'lumot topilmadi. Menda mavjud bilimlar asosida qisqacha tushuntiraman:" deb davom eting.
+"CRMda yetarli ma'lumot topilmadi" iborasini ishlatmang.`;
 
 export const USER_OUTPUT_INSTRUCTION = `MUHIM: Javob faqat o'zbek tilida (lotin) bo'lsin. CRM ichki kodlari, STAGE_ID, UC_*, NEW, LOSE, SUCCESS foydalanuvchiga ko'rinmasin.`;

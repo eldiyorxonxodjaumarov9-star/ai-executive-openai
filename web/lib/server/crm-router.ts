@@ -5,8 +5,8 @@ type CrmRecord = Record<string, unknown>;
 const QUICK_MAX = 12;
 
 const ENTITY_KEYWORDS: Record<string, string[]> = {
-  deals: ["sotuv", "bitim", "summa", "qancha sotuv", "bugun sotuv", "savdo", "konversiya", "voronka", "sotildi"],
-  tasks: ["vazifa", "kim nima qildi", "xodim", "ishchi", "bajarildi", "deadline", "nima qildi", "nima ish"],
+  deals: ["sotuv", "bitim", "summa", "qancha sotuv", "bugun sotuv", "savdo", "konversiya", "voronka", "sotildi", "savdo bo'ldi", "yopildi"],
+  tasks: ["vazifa", "kim nima qildi", "xodim", "ishchi", "bajarildi", "deadline", "nima qildi", "nima ish", "topshiriq", "faoliyat"],
   leads: ["lid", "so'rov", "so‘rov", "yangi mijoz", "mijoz so'rovi", "mijoz so‘rovi"],
   contacts: ["kontakt", "aloqa", "tashkilot", "kompaniya"],
 };
@@ -96,6 +96,10 @@ function emptyPayload(): CrmPayload {
   };
 }
 
+export function hasCrmData(data: CrmPayload): boolean {
+  return data.leads.length + data.deals.length + data.contacts.length + data.tasks.length > 0;
+}
+
 export async function fetchCrmForQuick(question: string): Promise<{ entities: string[]; data: CrmPayload }> {
   const entities = detectQuickCrmEntities(question);
   const text = normalize(question);
@@ -142,12 +146,14 @@ export async function fetchCrmForQuick(question: string): Promise<{ entities: st
   return { entities, data: payload };
 }
 
-function formatCrmBlockQuick(data: CrmPayload): string {
-  const hasData =
-    data.leads.length + data.deals.length + data.contacts.length + data.tasks.length > 0;
+function formatCrmBlockQuick(data: CrmPayload, mode: "crm_only" | "hybrid" = "crm_only"): string {
+  const hasData = hasCrmData(data);
 
   if (!hasData) {
-    return "CRM: bu savol uchun alohida ma'lumot yuklanmadi — umumiy bilimga tayangan holda javob bering.";
+    if (mode === "hybrid") {
+      return "Bitrix24: bu savol uchun tegishli yozuv topilmadi. Bilim bazasi qismini ishlating va fallback qoidasiga amal qiling.";
+    }
+    return "Bitrix24: bu savol uchun tegishli yozuv topilmadi. Fallback qoidasiga amal qiling — texnik xato xabari bermang.";
   }
 
   const lines: string[] = [];

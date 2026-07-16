@@ -32,16 +32,24 @@ export async function POST(req: NextRequest, context: RouteContext) {
 
   try {
     const agent = normalizeAgent(agentParam);
-    const { answer, crmSummary } = await runQuickAnswer(agent, question);
+    const { answer, crmSummary, intent, domainIntent, brainFiles, knowledgeFiles, crmEntities } =
+      await runQuickAnswer(agent, question);
 
     return NextResponse.json({
       success: true,
       agent,
       agent_display_name: AGENT_DISPLAY_NAMES[agent],
       mode: "quick_answer",
+      intent,
+      domain_intent: domainIntent,
       question,
       answer,
       crm_summary: crmSummary,
+      routing: {
+        brain_files: brainFiles,
+        knowledge_files: knowledgeFiles,
+        crm_entities: crmEntities,
+      },
     });
   } catch (e) {
     if (e instanceof BitrixError) {
