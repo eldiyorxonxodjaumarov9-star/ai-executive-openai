@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="32" viewBox="0 0 120 32" fill="none">
+  <rect width="32" height="32" rx="8" fill="#1e3a5f"/>
+  <path d="M10 10h12v2H10V10zm0 5h12v2H10v-2zm0 5h8v2h-8v-2z" fill="#fff"/>
+  <text x="40" y="22" font-family="Inter,system-ui,sans-serif" font-size="14" font-weight="700" fill="#1e3a5f">HARIDLAR.UZ</text>
+</svg>

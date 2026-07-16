@@ -10,12 +10,12 @@ export const VALID_AGENTS = [
 export type AgentId = (typeof VALID_AGENTS)[number];
 
 export const AGENT_DISPLAY_NAMES: Record<AgentId, string> = {
-  ceo: "Bosh direktor agenti",
+  ceo: "Rahbar agenti",
   sales: "Sotuv agenti",
   finance: "Moliya agenti",
-  marketing: "Marketing agenti",
-  customer_success: "Mijozlar muvaffaqiyati agenti",
-  hr: "Kadrlar agenti",
+  marketing: "Targ'ibot agenti",
+  customer_success: "Mijozlar agenti",
+  hr: "Xodimlar agenti",
 };
 
 export function normalizeAgent(name: string): AgentId {
@@ -29,9 +29,9 @@ export function normalizeAgent(name: string): AgentId {
 }
 
 export const QUICK_ANSWER_INSTRUCTION = `Foydalanuvchi savoliga faqat kerakli ma'lumot asosida qisqa, aniq va o'zbek tilida javob ber.
-Javob 5–12 jumladan oshmasin. Katta hisobot yozma. Keraksiz bo'limlar ochma.
+Javob odatda 2–8 jumlada bo'lsin. Katta hisobot yozma. Keraksiz bo'limlar ochma.
 Jadval, uzun ro'yxat va keng risk tahlilini faqat savol aniq talab qilsa ishlat.
-Ichki CRM kodlarini (STAGE_ID, STATUS_ID va h.k.) ko'rsatma — faqat o'zbekcha tushunarli nomlar.
+Ichki CRM kodlarini ko'rsatma — faqat o'zbekcha tushunarli nomlar.
 Inglizcha va ruscha so'z ishlatma.
 Agar ma'lumot yetarli bo'lmasa: 'Bu savolga aniq javob berish uchun CRMda yetarli ma'lumot topilmadi.'`;
 

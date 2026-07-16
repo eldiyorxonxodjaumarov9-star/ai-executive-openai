@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const env = getEnv();
-  const configured = env.aiProvider === "openai" && Boolean(env.openaiApiKey);
+  const openaiConfigured = Boolean(env.openaiApiKey);
 
   return NextResponse.json({
     ok: true,
@@ -14,8 +14,10 @@ export async function GET() {
     app_name: "AI Executive Platform",
     environment: process.env.VERCEL_ENV || "development",
     agents: VALID_AGENTS,
-    ai_provider: env.aiProvider,
-    ai_configured: configured,
+    ai_provider: "openai",
+    ai_configured: openaiConfigured,
+    openai_configured: openaiConfigured,
+    claude_legacy_configured: false,
     ai_model: env.openaiModel,
   });
 }

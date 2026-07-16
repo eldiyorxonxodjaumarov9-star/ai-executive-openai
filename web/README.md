@@ -1,61 +1,66 @@
-# AI Executive Platform
+# AI Executive Platform — Vercel
 
-Full-stack **Next.js** app — Claude.ai uslubidagi web chat + Bitrix24 + OpenAI.
-
-**Contabo, Docker, FastAPI va Chrome Extension asosiy workflow emas.**
+Tezkor, mobilga mos AI chat: Bitrix24 + OpenAI.
 
 ## Arxitektura
 
 ```
-web/ (Next.js on Vercel)
-├── app/              UI + API routes
-├── lib/server/       Bitrix24, OpenAI, agents
-├── prompts/          Agent system prompts
-└── components/       Chat UI
+Brauzer → Next.js (Vercel) → Bitrix24 REST → OpenAI Responses API → o'zbekcha javob
 ```
 
-## API
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/health` | Platform holati |
-| GET | `/api/test/bitrix` | Bitrix24 test |
-| GET | `/api/test/openai` | OpenAI test |
-| POST | `/api/chat/agent/{agent}` | Tezkor savol-javob |
-| POST | `/api/tools/agent/{agent}` | To'liq hisobot |
+Render, Claude, Chrome extension va MCP **ishlatilmaydi** (legacy/ papkada).
 
 ## Vercel deploy
 
-1. Import repo → **Root Directory: `web`**
-2. Environment variables:
+1. GitHub repoga ulang
+2. **Root Directory:** `web`
+3. **Framework:** Next.js (avtomatik)
+4. **Build Command:** `npm run build` (default)
+5. **Output:** Next.js default
 
-```env
-AI_PROVIDER=openai
-OPENAI_API_KEY=sk-...
-BITRIX24_WEBHOOK_URL=https://your.bitrix24.uz/rest/1/token/
-```
+### Environment Variables
 
-3. Deploy
+| O'zgaruvchi | Majburiy | Tavsif |
+|-------------|----------|--------|
+| `OPENAI_API_KEY` | Ha | OpenAI API kaliti |
+| `OPENAI_MODEL` | Yo'q | Default: `gpt-4o-mini` |
+| `BITRIX24_WEBHOOK_URL` | Ha | Bitrix24 incoming webhook |
+| `OPENAI_QUICK_MAX_TOKENS` | Yo'q | Default: `800` |
 
-## Local dev
+Kalitlar faqat serverda — frontendga chiqmaydi.
+
+## Mahalliy ishga tushirish
 
 ```bash
 cd web
 cp .env.example .env.local
-# Edit .env.local with your keys
+# .env.local ni to'ldiring
 npm install
 npm run dev
 ```
 
-Open http://localhost:3000
+http://localhost:3000
 
-## Agentlar
+## API
 
-CEO · Sales · Finance · HR · Marketing · Customer Success
+| Method | Path | Vazifa |
+|--------|------|--------|
+| GET | `/api/health` | Holat |
+| GET | `/api/test/openai` | OpenAI test |
+| GET | `/api/test/bitrix` | Bitrix24 test |
+| POST | `/api/chat/agent/{agent}` | Tezkor javob |
 
-- Oddiy savol → qisqa o'zbekcha javob (OpenAI + minimal CRM)
-- To'liq hisobot → faqat maxsus kalit so'zlar yoki tugma
+Agentlar: `ceo`, `finance`, `sales`, `hr`, `marketing`, `customer_success`
 
-## Legacy backend
+## Test
 
-Python FastAPI (`app/`) va Docker optional — production uchun faqat `web/` ishlatiladi.
+```bash
+cd web
+npm run build
+npm run start
+```
+
+- Bosh sahifa 200
+- Agent tanlash
+- "Salom" — tez javob, CRM yuklanmasin
+- Sotuv/vazifa savollari — faqat tegishli CRM

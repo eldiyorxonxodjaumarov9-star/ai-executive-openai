@@ -11,24 +11,38 @@ export class ApiError extends Error {
   }
 }
 
+function userFacingMessage(message: string): string {
+  const lower = message.toLowerCase();
+  if (lower.includes("claude") || lower.includes("anthropic") || lower.includes("authentication")) {
+    return "OpenAI bilan javob olishda xato yuz berdi — keyinroq qayta urinib ko'ring.";
+  }
+  if (lower.includes("timeout") || lower.includes("vaqti tugadi")) {
+    return "OpenAI javobi vaqti tugadi — qayta urinib ko'ring.";
+  }
+  if (message.includes("OpenAI") || message.includes("CRM") || message.includes("Savol")) {
+    return message;
+  }
+  return "OpenAI bilan javob olishda xato yuz berdi — keyinroq qayta urinib ko'ring.";
+}
+
 function parseError(status: number, body: string): ApiError {
   try {
     const data = JSON.parse(body);
     const detail = data?.detail;
     const code = typeof detail === "object" ? detail?.code : data?.code;
-    const message =
+    const raw =
       (typeof detail === "object" ? detail?.message : detail) ||
       data?.error ||
       data?.message ||
       `Server xatosi (${status})`;
+    const message = userFacingMessage(String(raw));
     if (code === "crm_error")
       return new ApiError("CRM ma'lumot olishda xato — Bitrix24 ulanishini tekshiring.", code, status);
     if (code === "ai_timeout")
-      return new ApiError(message || "AI javob bermadi — vaqt tugadi.", code, status);
+      return new ApiError("OpenAI javobi vaqti tugadi — qayta urinib ko'ring.", code, status);
     if (code === "ai_config_error")
-      return new ApiError(message || "OpenAI sozlanmagan.", code, status);
-    if (code === "ai_error")
-      return new ApiError(message || "AI javob bermadi.", code, status);
+      return new ApiError("OpenAI sozlamasi to'liq emas — administrator bilan bog'laning.", code, status);
+    if (code === "ai_error") return new ApiError(message, code, status);
     if (code === "agent_invalid") return new ApiError(message, code, status);
     return new ApiError(message, code, status);
   } catch {
@@ -36,7 +50,7 @@ function parseError(status: number, body: string): ApiError {
   }
 }
 
-async function request<T>(path: string, options: RequestInit = {}, timeoutMs = 65000): Promise<T> {
+async function request<T>(path: string, options: RequestInit = {}, timeoutMs = 60000): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -51,9 +65,9 @@ async function request<T>(path: string, options: RequestInit = {}, timeoutMs = 6
   } catch (e) {
     if (e instanceof ApiError) throw e;
     if (e instanceof Error && e.name === "AbortError") {
-      throw new ApiError("So'rov vaqti tugadi.", "timeout");
+      throw new ApiError("OpenAI javobi vaqti tugadi — qayta urinib ko'ring.", "timeout");
     }
-    throw new ApiError(e instanceof Error ? e.message : "Tarmoq xatosi", "network");
+    throw new ApiError("Tarmoq xatosi — internetni tekshiring.", "network");
   } finally {
     clearTimeout(timer);
   }
@@ -63,6 +77,7 @@ export interface HealthResponse {
   ok: boolean;
   ai_provider: string;
   ai_configured: boolean;
+  openai_configured: boolean;
   ai_model?: string;
 }
 
@@ -75,27 +90,8 @@ export async function quickChat(agent: AgentId, question: string): Promise<strin
     `/api/chat/agent/${agent}`,
     { method: "POST", body: JSON.stringify({ question }) }
   );
-  if (!data.success) throw new ApiError(data.error || "Javob olinmadi");
+  if (!data.success) throw new ApiError("OpenAI bilan javob olishda xato yuz berdi.");
   return data.answer || "Ma'lumot yetarli emas.";
-}
-
-export async function fullReport(
-  agent: AgentId,
-  question: string,
-  onProgress?: (stage: string) => void
-): Promise<string> {
-  onProgress?.("To'liq hisobot tayyorlanmoqda...");
-  const data = await request<{
-    success: boolean;
-    data?: { answer?: string };
-    error?: string;
-  }>(
-    `/api/tools/agent/${agent}`,
-    { method: "POST", body: JSON.stringify({ question }) },
-    120000
-  );
-  if (!data.success) throw new ApiError(data.error || "Hisobot muvaffaqiyatsiz");
-  return data.data?.answer || "Ma'lumot yetarli emas.";
 }
 
 export function newId(): string {
