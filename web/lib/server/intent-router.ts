@@ -83,6 +83,9 @@ const CRM_SIGNALS: string[] = [
   "shu hafta",
   "nechta",
   "qancha sot",
+  "qancha sotuv",
+  "qancha sotildi",
+  "bugungi savdo",
   "kim qancha",
   "nima qildi",
   "yangi mijoz",
@@ -99,6 +102,13 @@ const CRM_SIGNALS: string[] = [
   "bitrix24",
   "sotuv bo'ldi",
   "savdo bo'ldi",
+  "sotuv",
+  "savdo",
+  "qancha sotildi",
+  "qancha sotuv",
+  "bugungi savdo",
+  "7 kunlik",
+  "oxirgi 7 kun",
   "yopilgan bitim",
   "ochiq bitim",
   "lid soni",
@@ -162,10 +172,13 @@ export function analyzeRouteIntent(question: string): RouteIntent {
   const domainIntent = inferDomainIntent(text);
   const matchedKeywords = [...new Set([...crmHits, ...knowledgeHits])];
 
-  const wantsCrm =
-    crmHits.length > 0 ||
+  const wantsCrmData =
+    crmHits.some((h) => !["sotuv", "savdo"].includes(h)) ||
+    /\b(bugun|kecha|nechta|qancha|nima qildi|oxirgi|7 kun|yopildi|yaratildi|bitim)\b/.test(text) ||
     (domainIntent === "tasks" && hasCapitalizedName(raw)) ||
-    (domainIntent === "deals" && /\b(bugun|nechta|qancha)\b/.test(text));
+    (hasPersonActivityQuestion(text) && hasCapitalizedName(raw));
+
+  const wantsCrm = wantsCrmData;
 
   const wantsKnowledge =
     knowledgeHits.length > 0 ||
@@ -183,8 +196,8 @@ export function analyzeRouteIntent(question: string): RouteIntent {
 
   // Umumiy tushuntirish — bilim bazasi, CRM emas
   if (
-    /\b(nima|qanday|nega|kim|qaysi|tushuntir|ma'lumot ber)\b/.test(text) &&
-    !/\b(bugun|nechta|qancha sot|bitim|vazifa)\b/.test(text)
+    /\b(nima|qanday|nega|kim|qaysi|tushuntir|ma'lumot ber|qoida|qoidalar)\b/.test(text) &&
+    !/\b(bugun|nechta|qancha sot|bitim yop|bitim yarat)\b/.test(text)
   ) {
     return { type: "knowledge_question", domainIntent, matchedKeywords };
   }

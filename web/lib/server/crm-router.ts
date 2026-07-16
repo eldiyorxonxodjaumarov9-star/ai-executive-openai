@@ -1,11 +1,45 @@
-import { fetchContacts, fetchDeals, fetchLeads, fetchTasks, type CrmPayload } from "./bitrix";
+import {
+  BitrixError,
+  fetchAllDealsComplete,
+  fetchContacts,
+  fetchDealStages,
+  fetchLeads,
+  fetchTasks,
+  searchUsersByName,
+  type CrmPayload,
+} from "./bitrix";
+import {
+  computeSalesAnalytics,
+  formatSalesBlock,
+  parseSalesPeriod,
+  type SalesAnalytics,
+  type SalesFetchStatus,
+} from "./sales-analytics";
 
 type CrmRecord = Record<string, unknown>;
 
 const QUICK_MAX = 12;
 
+const DEAL_KEYWORDS = [
+  "sotuv",
+  "savdo",
+  "bitim",
+  "qancha sotildi",
+  "qancha sotuv",
+  "bugungi savdo",
+  "bugun sotuv",
+  "sotuv bo'ldi",
+  "savdo bo'ldi",
+  "sotildi",
+  "yopildi",
+  "yopilgan",
+  "yaratildi",
+  "voronka",
+  "konversiya",
+];
+
 const ENTITY_KEYWORDS: Record<string, string[]> = {
-  deals: ["sotuv", "bitim", "summa", "qancha sotuv", "bugun sotuv", "savdo", "konversiya", "voronka", "sotildi", "savdo bo'ldi", "yopildi"],
+  deals: DEAL_KEYWORDS,
   tasks: ["vazifa", "kim nima qildi", "xodim", "ishchi", "bajarildi", "deadline", "nima qildi", "nima ish", "topshiriq", "faoliyat"],
   leads: ["lid", "so'rov", "so‘rov", "yangi mijoz", "mijoz so'rovi", "mijoz so‘rovi"],
   contacts: ["kontakt", "aloqa", "tashkilot", "kompaniya"],
@@ -17,25 +51,19 @@ function normalize(text: string): string {
   return text.toLowerCase().replace(/ʻ|’|`/g, "'");
 }
 
-function isToday(dateStr: unknown): boolean {
-  if (!dateStr || typeof dateStr !== "string") return false;
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return false;
-  const now = new Date();
-  return (
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate()
-  );
-}
-
 function extractPersonName(question: string): string | null {
+  const skip = new Set(["Bugun", "Kecha", "Oxirgi", "Nechta", "Qancha", "Kim", "Savdo", "Sotuv", "Bitim"]);
   const words = question.split(/\s+/);
   for (const w of words) {
     const clean = w.replace(/[^a-zA-Z\u0400-\u04FF']/g, "");
-    if (clean.length >= 3 && /^[A-Z\u0410-\u042F]/.test(clean)) return clean;
+    if (clean.length >= 3 && /^[A-Z\u0410-\u042F]/.test(clean) && !skip.has(clean)) return clean;
   }
   return null;
+}
+
+export function isSalesQuery(question: string): boolean {
+  const text = normalize(question);
+  return DEAL_KEYWORDS.some((k) => text.includes(k));
 }
 
 export function detectQuickCrmEntities(question: string | null): string[] {
@@ -50,24 +78,11 @@ export function detectQuickCrmEntities(question: string | null): string[] {
   }
 
   if (text.includes("mijoz") && !selected.includes("leads")) selected.push("leads");
-  if (text.includes("bugun") && !selected.length) selected.push("leads", "deals", "tasks");
+  if (text.includes("bugun") && /\b(nechta|qancha|qildi|sotuv|savdo|bitim)\b/.test(text) && !selected.includes("deals")) {
+    selected.push("deals");
+  }
 
   return [...new Set(selected)];
-}
-
-function filterByToday(items: CrmRecord[], dateFields: string[]): CrmRecord[] {
-  return items.filter((item) => dateFields.some((f) => isToday(item[f])));
-}
-
-function filterByName(items: CrmRecord[], name: string): CrmRecord[] {
-  const lower = name.toLowerCase();
-  return items.filter((item) => {
-    const hay = [item.TITLE, item.DESCRIPTION, item.NAME, item.LAST_NAME]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-    return hay.includes(lower);
-  });
 }
 
 function summaryFrom(data: Partial<CrmPayload>): CrmPayload["summary"] {
@@ -97,23 +112,108 @@ function emptyPayload(): CrmPayload {
 }
 
 export function hasCrmData(data: CrmPayload): boolean {
+  if (data.salesBlock) return true;
+  if (data.salesAnalytics && data.salesAnalytics.fetchStatus === "ok") return true;
+  if (data.salesAnalytics && data.salesAnalytics.totalDealsFetched > 0) return true;
   return data.leads.length + data.deals.length + data.contacts.length + data.tasks.length > 0;
 }
 
-export async function fetchCrmForQuick(question: string): Promise<{ entities: string[]; data: CrmPayload }> {
+async function fetchSalesData(question: string): Promise<{
+  payload: CrmPayload;
+  status: SalesFetchStatus;
+  logReason?: string;
+}> {
+  const payload = emptyPayload();
+  payload.mode = "sales";
+
+  try {
+    const [deals, stages] = await Promise.all([fetchAllDealsComplete(), fetchDealStages()]);
+    const range = parseSalesPeriod(question);
+    const personName = extractPersonName(question);
+
+    let personUserIds: Set<string> | undefined;
+    if (personName) {
+      const users = await searchUsersByName(personName);
+      if (users.length) {
+        personUserIds = new Set(users.map((u) => String(u.ID)));
+        payload.summary = summaryFrom({ deals });
+      }
+    }
+
+    const analytics: SalesAnalytics = computeSalesAnalytics(deals, stages, range, personUserIds);
+    if (personName) analytics.personFilter = personName;
+
+    analytics.fetchStatus = deals.length === 0 ? "empty_crm" : analytics.fetchStatus;
+    analytics.logReason =
+      analytics.fetchStatus === "empty_crm"
+        ? "Bitrix24 bo'sh natija qaytardi"
+        : analytics.logReason;
+
+    payload.deals = deals.slice(0, QUICK_MAX);
+    payload.summary = summaryFrom({ deals });
+    payload.salesAnalytics = analytics;
+    payload.salesBlock = formatSalesBlock(analytics, question);
+    payload.fetchStatus = analytics.fetchStatus;
+    payload.fetchLogReason = analytics.logReason;
+
+    console.info("[CRM] Sales analytics", {
+      question: question.slice(0, 80),
+      totalDeals: deals.length,
+      wonCount: analytics.wonToday.count,
+      wonTotal: analytics.wonToday.total,
+      createdCount: analytics.createdToday.count,
+      status: analytics.fetchStatus,
+      reason: analytics.logReason,
+    });
+
+    return { payload, status: analytics.fetchStatus, logReason: analytics.logReason };
+  } catch (e) {
+    let status: SalesFetchStatus = "webhook_error";
+    let logReason = "Bitrix24 webhook xatosi";
+
+    if (e instanceof BitrixError) {
+      if (e.code === "permission_denied") {
+        status = "permission_denied";
+        logReason = "Bitrix24 ruxsati yetarli emas";
+      } else {
+        logReason = e.message;
+      }
+      console.error("[CRM] Sales fetch xato", { code: e.code, status: e.statusCode, reason: logReason });
+    } else {
+      console.error("[CRM] Sales fetch kutilmagan xato", { error: e instanceof Error ? e.message : "unknown" });
+    }
+
+    payload.fetchStatus = status;
+    payload.fetchLogReason = logReason;
+    return { payload, status, logReason };
+  }
+}
+
+export async function fetchCrmForQuick(question: string): Promise<{
+  entities: string[];
+  data: CrmPayload;
+  fetchStatus?: SalesFetchStatus;
+  fetchLogReason?: string;
+}> {
   const entities = detectQuickCrmEntities(question);
-  const text = normalize(question);
-  const wantsToday = text.includes("bugun");
-  const personName = extractPersonName(question);
 
   if (!entities.length) {
     return { entities: [], data: emptyPayload() };
   }
 
+  if (entities.includes("deals") || isSalesQuery(question)) {
+    const { payload, status, logReason } = await fetchSalesData(question);
+    return {
+      entities: [...new Set([...entities, "deals"])],
+      data: payload,
+      fetchStatus: status,
+      fetchLogReason: logReason,
+    };
+  }
+
   const payload = emptyPayload();
   const fetchers: Record<string, () => Promise<CrmRecord[]>> = {
     leads: fetchLeads,
-    deals: fetchDeals,
     contacts: fetchContacts,
     tasks: fetchTasks,
   };
@@ -122,38 +222,31 @@ export async function fetchCrmForQuick(question: string): Promise<{ entities: st
     entities.map(async (name) => {
       if (!fetchers[name]) return;
       let items = await fetchers[name]();
-
-      if (name === "leads" && wantsToday) {
-        items = filterByToday(items, ["DATE_CREATE", "DATE_MODIFY"]);
-      }
-      if (name === "deals" && wantsToday) {
-        items = filterByToday(items, ["DATE_CREATE", "DATE_MODIFY", "CLOSEDATE"]);
-      }
-      if (name === "tasks") {
-        if (personName) items = filterByName(items, personName);
-        if (wantsToday) items = filterByToday(items, ["CREATED_DATE", "CHANGED_DATE", "DEADLINE"]);
-      }
-
       items = items.slice(0, QUICK_MAX);
       if (name === "leads") payload.leads = items;
-      else if (name === "deals") payload.deals = items;
       else if (name === "contacts") payload.contacts = items;
       else if (name === "tasks") payload.tasks = items;
     })
   );
 
   payload.summary = summaryFrom(payload);
-  return { entities, data: payload };
+  return { entities, data: payload, fetchStatus: hasCrmData(payload) ? "ok" : "empty_crm" };
 }
 
 function formatCrmBlockQuick(data: CrmPayload, mode: "crm_only" | "hybrid" = "crm_only"): string {
+  if (data.salesBlock) {
+    return data.salesBlock;
+  }
+
   const hasData = hasCrmData(data);
 
   if (!hasData) {
+    const reason = data.fetchLogReason || "Bitrix24 dan ma'lumot olinmadi";
+    console.warn("[CRM] Bo'sh context", { reason, mode, fetchStatus: data.fetchStatus });
     if (mode === "hybrid") {
-      return "Bitrix24: bu savol uchun tegishli yozuv topilmadi. Bilim bazasi qismini ishlating va fallback qoidasiga amal qiling.";
+      return `Bitrix24: ${reason}. Bilim bazasi qismini ishlating.`;
     }
-    return "Bitrix24: bu savol uchun tegishli yozuv topilmadi. Fallback qoidasiga amal qiling — texnik xato xabari bermang.";
+    return `Bitrix24: ${reason}.`;
   }
 
   const lines: string[] = [];

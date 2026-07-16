@@ -3,7 +3,8 @@ import { getEnv } from "./env";
 export class BitrixError extends Error {
   constructor(
     message: string,
-    public statusCode?: number
+    public statusCode?: number,
+    public code?: string
   ) {
     super(message);
     this.name = "BitrixError";
@@ -11,6 +12,50 @@ export class BitrixError extends Error {
 }
 
 type CrmRecord = Record<string, unknown>;
+
+export interface DealStageInfo {
+  name: string;
+  semantics: string | null;
+  isSuccess: boolean;
+  isFail: boolean;
+}
+
+export interface BitrixListResponse {
+  result: unknown;
+  next?: number;
+  total?: number;
+  error?: string;
+  error_description?: string;
+}
+
+export const DEAL_SELECT_FIELDS = [
+  "ID",
+  "TITLE",
+  "OPPORTUNITY",
+  "CURRENCY_ID",
+  "STAGE_ID",
+  "STAGE_SEMANTIC_ID",
+  "DATE_CREATE",
+  "DATE_MODIFY",
+  "CLOSEDATE",
+  "CLOSED",
+  "ASSIGNED_BY_ID",
+  "CATEGORY_ID",
+] as const;
+
+const stageCache: { map: Map<string, DealStageInfo>; expiresAt: number } = {
+  map: new Map(),
+  expiresAt: 0,
+};
+
+const STAGE_CACHE_TTL_MS = 5 * 60 * 1000;
+
+function safeLog(level: "error" | "warn" | "info", message: string, detail?: Record<string, unknown>) {
+  const payload = detail ? ` ${JSON.stringify(detail)}` : "";
+  if (level === "error") console.error(`[Bitrix24] ${message}${payload}`);
+  else if (level === "warn") console.warn(`[Bitrix24] ${message}${payload}`);
+  else console.info(`[Bitrix24] ${message}${payload}`);
+}
 
 function normalizeRecord(record: CrmRecord): CrmRecord {
   const normalized: CrmRecord = {};
@@ -25,9 +70,23 @@ function normalizeRecord(record: CrmRecord): CrmRecord {
   return normalized;
 }
 
-async function bitrixCall(method: string, params: CrmRecord = {}): Promise<unknown> {
+function classifyBitrixError(error: string, description?: string): BitrixError {
+  const msg = (description || error).toLowerCase();
+  if (msg.includes("insufficient scope") || msg.includes("access denied") || msg.includes("permission")) {
+    return new BitrixError("Bitrix24 ruxsati yetarli emas.", 403, "permission_denied");
+  }
+  if (msg.includes("invalid") && msg.includes("token")) {
+    return new BitrixError("Bitrix24 webhook noto'g'ri.", 401, "webhook_error");
+  }
+  return new BitrixError(description || error, undefined, "webhook_error");
+}
+
+export async function bitrixCallRaw(method: string, params: CrmRecord = {}): Promise<BitrixListResponse> {
   const { bitrixWebhookUrl } = getEnv();
-  if (!bitrixWebhookUrl) throw new BitrixError("BITRIX24_WEBHOOK_URL sozlanmagan.");
+  if (!bitrixWebhookUrl) {
+    safeLog("error", "Webhook URL sozlanmagan");
+    throw new BitrixError("BITRIX24_WEBHOOK_URL sozlanmagan.", undefined, "webhook_error");
+  }
 
   const url = `${bitrixWebhookUrl}/${method}`;
   let response: Response;
@@ -36,21 +95,69 @@ async function bitrixCall(method: string, params: CrmRecord = {}): Promise<unkno
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(params),
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(55000),
     });
-  } catch {
-    throw new BitrixError("CRM ulanish xatosi — Bitrix24 dan javob kelmadi.");
+  } catch (e) {
+    safeLog("error", "Ulanish xatosi", { method, error: e instanceof Error ? e.message : "network" });
+    throw new BitrixError("CRM ulanish xatosi — Bitrix24 dan javob kelmadi.", undefined, "webhook_error");
   }
 
   if (response.status >= 400) {
-    throw new BitrixError(`Bitrix24 HTTP ${response.status}`, response.status);
+    safeLog("error", "HTTP xato", { method, status: response.status });
+    throw new BitrixError(`Bitrix24 HTTP ${response.status}`, response.status, "webhook_error");
   }
 
-  const data = (await response.json()) as { error?: string; error_description?: string; result?: unknown };
-  if (data.error) {
-    throw new BitrixError(data.error_description || data.error);
+  let data: BitrixListResponse;
+  try {
+    data = (await response.json()) as BitrixListResponse;
+  } catch {
+    safeLog("error", "JSON parse xato", { method });
+    throw new BitrixError("Bitrix24 javobi o'qilmadi.", undefined, "webhook_error");
   }
+
+  if (data.error) {
+    safeLog("error", "API xato", { method, error: data.error, description: data.error_description });
+    throw classifyBitrixError(data.error, data.error_description);
+  }
+
+  return data;
+}
+
+async function bitrixCall(method: string, params: CrmRecord = {}): Promise<unknown> {
+  const data = await bitrixCallRaw(method, params);
   return data.result;
+}
+
+async function listAllPaginated(
+  method: string,
+  params: { select: string[]; order?: Record<string, string>; filter?: CrmRecord },
+  options: { maxRecords?: number } = {}
+): Promise<CrmRecord[]> {
+  const maxRecords = options.maxRecords ?? 10000;
+  const collected: CrmRecord[] = [];
+  let start: number | undefined = 0;
+  let page = 0;
+
+  while (collected.length < maxRecords) {
+    page += 1;
+    const callParams: CrmRecord = { ...params, start };
+    const data = await bitrixCallRaw(method, callParams);
+
+    const items = Array.isArray(data.result) ? data.result : [];
+    if (!items.length) break;
+
+    collected.push(...items.map(normalizeRecord));
+
+    if (data.next === undefined || data.next === null) break;
+    start = data.next;
+
+    if (page > 500) {
+      safeLog("warn", "Pagination limitga yetdi", { method, collected: collected.length });
+      break;
+    }
+  }
+
+  return collected.slice(0, maxRecords);
 }
 
 async function listAll(
@@ -59,25 +166,89 @@ async function listAll(
   limit: number,
   order?: Record<string, string>
 ): Promise<CrmRecord[]> {
-  const collected: CrmRecord[] = [];
-  let start = 0;
-  const pageSize = Math.min(50, limit);
+  return listAllPaginated(method, { select, order }, { maxRecords: limit });
+}
 
-  while (collected.length < limit) {
-    const batchSize = Math.min(pageSize, limit - collected.length);
-    const params: CrmRecord = { select, start };
-    if (order) params.order = order;
+export async function fetchAllDealsComplete(): Promise<CrmRecord[]> {
+  safeLog("info", "Barcha bitimlar yuklanmoqda (to'liq pagination)");
+  const deals = await listAllPaginated(
+    "crm.deal.list",
+    {
+      select: [...DEAL_SELECT_FIELDS],
+      order: { DATE_MODIFY: "DESC" },
+    },
+    { maxRecords: 10000 }
+  );
+  safeLog("info", "Bitimlar yuklandi", { count: deals.length });
+  return deals;
+}
 
-    const result = (await bitrixCall(method, params)) as CrmRecord[] | undefined;
-    const items = Array.isArray(result) ? result : [];
-    if (!items.length) break;
-
-    collected.push(...items.map(normalizeRecord));
-    start += items.length;
-    if (items.length < batchSize) break;
+export async function fetchDealStages(): Promise<Map<string, DealStageInfo>> {
+  if (stageCache.map.size && Date.now() < stageCache.expiresAt) {
+    return stageCache.map;
   }
 
-  return collected.slice(0, limit);
+  const stages = new Map<string, DealStageInfo>();
+  const entityIds = new Set<string>(["DEAL_STAGE"]);
+
+  try {
+    const categories = (await bitrixCall("crm.dealcategory.list", {})) as CrmRecord[] | undefined;
+    if (Array.isArray(categories)) {
+      for (const cat of categories) {
+        if (cat.ID != null) entityIds.add(`DEAL_STAGE_${cat.ID}`);
+      }
+    }
+  } catch (e) {
+    safeLog("warn", "Deal category yuklanmadi", {
+      error: e instanceof Error ? e.message : "unknown",
+    });
+  }
+
+  for (const entityId of entityIds) {
+    try {
+      const data = await bitrixCallRaw("crm.status.list", { filter: { ENTITY_ID: entityId } });
+      const statuses = Array.isArray(data.result) ? data.result : [];
+      for (const raw of statuses) {
+        const s = raw as CrmRecord;
+        const id = String(s.STATUS_ID || "");
+        if (!id) continue;
+        const semantics = typeof s.SEMANTICS === "string" ? s.SEMANTICS : null;
+        stages.set(id, {
+          name: String(s.NAME || id),
+          semantics,
+          isSuccess: semantics === "S",
+          isFail: semantics === "F",
+        });
+      }
+    } catch (e) {
+      safeLog("warn", "Stage list yuklanmadi", { entityId, error: e instanceof Error ? e.message : "unknown" });
+    }
+  }
+
+  stageCache.map = stages;
+  stageCache.expiresAt = Date.now() + STAGE_CACHE_TTL_MS;
+  safeLog("info", "Bosqichlar yuklandi", { count: stages.size });
+  return stages;
+}
+
+export async function searchUsersByName(name: string): Promise<CrmRecord[]> {
+  if (!name.trim()) return [];
+  try {
+    const result = (await bitrixCall("user.search", {
+      FILTER: { NAME: name.trim() },
+      SELECT: ["ID", "NAME", "LAST_NAME"],
+    })) as CrmRecord[] | undefined;
+    if (Array.isArray(result) && result.length) return result;
+
+    const lastNameResult = (await bitrixCall("user.search", {
+      FILTER: { LAST_NAME: name.trim() },
+      SELECT: ["ID", "NAME", "LAST_NAME"],
+    })) as CrmRecord[] | undefined;
+    return Array.isArray(lastNameResult) ? lastNameResult : [];
+  } catch (e) {
+    safeLog("warn", "user.search xato", { name, error: e instanceof Error ? e.message : "unknown" });
+    return [];
+  }
 }
 
 export async function fetchLeads(): Promise<CrmRecord[]> {
@@ -92,12 +263,7 @@ export async function fetchLeads(): Promise<CrmRecord[]> {
 
 export async function fetchDeals(): Promise<CrmRecord[]> {
   const { bitrixDealsLimit } = getEnv();
-  return listAll(
-    "crm.deal.list",
-    ["ID", "TITLE", "STAGE_ID", "OPPORTUNITY", "DATE_CREATE", "DATE_MODIFY", "CLOSEDATE", "ASSIGNED_BY_ID"],
-    bitrixDealsLimit,
-    { DATE_MODIFY: "DESC" }
-  );
+  return listAll("crm.deal.list", [...DEAL_SELECT_FIELDS], bitrixDealsLimit, { DATE_MODIFY: "DESC" });
 }
 
 export async function fetchContacts(): Promise<CrmRecord[]> {
@@ -166,6 +332,34 @@ export async function testBitrixConnection(): Promise<{ success: boolean; data?:
   }
 }
 
+export async function checkBitrixHealth(): Promise<{
+  connected: boolean;
+  deals_readable: boolean;
+  sample_count: number;
+  error: string | null;
+}> {
+  try {
+    await bitrixCall("profile");
+    const data = await bitrixCallRaw("crm.deal.list", { select: ["ID", "TITLE"], start: 0 });
+    const items = Array.isArray(data.result) ? data.result : [];
+    return {
+      connected: true,
+      deals_readable: true,
+      sample_count: items.length,
+      error: null,
+    };
+  } catch (e) {
+    const msg = e instanceof BitrixError ? e.message : "Bitrix24 ulanishi muvaffaqiyatsiz";
+    safeLog("error", "Health check xato", { error: msg });
+    return {
+      connected: false,
+      deals_readable: false,
+      sample_count: 0,
+      error: msg,
+    };
+  }
+}
+
 export interface CrmPayload {
   fetched_at: string;
   summary: {
@@ -180,4 +374,10 @@ export interface CrmPayload {
   contacts: CrmRecord[];
   tasks: CrmRecord[];
   mode?: string;
+  salesAnalytics?: import("./sales-analytics").SalesAnalytics;
+  salesBlock?: string;
+  fetchStatus?: import("./sales-analytics").SalesFetchStatus;
+  fetchLogReason?: string;
 }
+
+export type { CrmRecord };
