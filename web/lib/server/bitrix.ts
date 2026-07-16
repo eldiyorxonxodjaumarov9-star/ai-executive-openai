@@ -132,7 +132,7 @@ async function listAllPaginated(
   method: string,
   params: { select: string[]; order?: Record<string, string>; filter?: CrmRecord },
   options: { maxRecords?: number } = {}
-): Promise<CrmRecord[]> {
+): Promise<{ items: CrmRecord[]; paginationPages: number }> {
   const maxRecords = options.maxRecords ?? 10000;
   const collected: CrmRecord[] = [];
   let start: number | undefined = 0;
@@ -157,7 +157,7 @@ async function listAllPaginated(
     }
   }
 
-  return collected.slice(0, maxRecords);
+  return { items: collected.slice(0, maxRecords), paginationPages: page };
 }
 
 async function listAll(
@@ -166,12 +166,18 @@ async function listAll(
   limit: number,
   order?: Record<string, string>
 ): Promise<CrmRecord[]> {
-  return listAllPaginated(method, { select, order }, { maxRecords: limit });
+  const { items } = await listAllPaginated(method, { select, order }, { maxRecords: limit });
+  return items;
 }
 
-export async function fetchAllDealsComplete(): Promise<CrmRecord[]> {
+export interface DealsFetchMeta {
+  deals: CrmRecord[];
+  paginationPages: number;
+}
+
+export async function fetchAllDealsCompleteWithMeta(): Promise<DealsFetchMeta> {
   safeLog("info", "Barcha bitimlar yuklanmoqda (to'liq pagination)");
-  const deals = await listAllPaginated(
+  const { items, paginationPages } = await listAllPaginated(
     "crm.deal.list",
     {
       select: [...DEAL_SELECT_FIELDS],
@@ -179,7 +185,12 @@ export async function fetchAllDealsComplete(): Promise<CrmRecord[]> {
     },
     { maxRecords: 10000 }
   );
-  safeLog("info", "Bitimlar yuklandi", { count: deals.length });
+  safeLog("info", "Bitimlar yuklandi", { count: items.length, paginationPages });
+  return { deals: items, paginationPages };
+}
+
+export async function fetchAllDealsComplete(): Promise<CrmRecord[]> {
+  const { deals } = await fetchAllDealsCompleteWithMeta();
   return deals;
 }
 

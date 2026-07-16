@@ -1,6 +1,7 @@
 import type { CrmRecord, DealStageInfo } from "./bitrix";
 import {
   TASHKENT_TZ,
+  getDatePartsInTz,
   getLastNDaysRange,
   getTodayRange,
   getYesterdayRange,
@@ -252,5 +253,85 @@ export function getTodaySalesDebugStats(
     won_today: stats.wonToday.count,
     won_total: stats.wonToday.total,
     modified_today: stats.modifiedActiveToday.count,
+  };
+}
+
+export interface TodaySalesDebugDeal {
+  ID: string;
+  TITLE: string;
+  OPPORTUNITY: number;
+  CURRENCY_ID: string;
+  STAGE_ID: string;
+  STAGE_SEMANTIC_ID: string;
+  ASSIGNED_BY_ID: string;
+  DATE_CREATE: string;
+  CLOSEDATE: string;
+}
+
+export interface TodaySalesDebugSuccess {
+  ok: true;
+  timezone: string;
+  current_date: string;
+  total_deals_loaded: number;
+  pagination_pages: number;
+  today_created_count: number;
+  today_won_count: number;
+  today_created_total: number;
+  today_won_total: number;
+  today_created_deals: TodaySalesDebugDeal[];
+  today_won_deals: TodaySalesDebugDeal[];
+}
+
+function toDebugDeal(deal: CrmRecord): TodaySalesDebugDeal {
+  return {
+    ID: String(deal.ID ?? ""),
+    TITLE: String(deal.TITLE ?? ""),
+    OPPORTUNITY: dealAmount(deal),
+    CURRENCY_ID: String(deal.CURRENCY_ID ?? "UZS"),
+    STAGE_ID: String(deal.STAGE_ID ?? ""),
+    STAGE_SEMANTIC_ID: String(deal.STAGE_SEMANTIC_ID ?? ""),
+    ASSIGNED_BY_ID: String(deal.ASSIGNED_BY_ID ?? ""),
+    DATE_CREATE: String(deal.DATE_CREATE ?? ""),
+    CLOSEDATE: String(deal.CLOSEDATE ?? ""),
+  };
+}
+
+export function buildTodaySalesDebugPayload(
+  deals: CrmRecord[],
+  stages: Map<string, DealStageInfo>,
+  paginationPages: number
+): TodaySalesDebugSuccess {
+  const range = getTodayRange();
+  const stats = computeSalesAnalytics(deals, stages, range);
+  const { iso: currentDate } = getDatePartsInTz(new Date(), TASHKENT_TZ);
+
+  const createdDeals: CrmRecord[] = [];
+  const wonDeals: CrmRecord[] = [];
+
+  for (const deal of deals) {
+    const createdAt = parseBitrixDate(deal.DATE_CREATE);
+    const closedAt = parseBitrixDate(deal.CLOSEDATE);
+    const successful = isDealSuccessful(deal, stages);
+
+    if (createdAt && isDateInRange(createdAt, range.from, range.to)) {
+      createdDeals.push(deal);
+    }
+    if (successful && closedAt && isDateInRange(closedAt, range.from, range.to)) {
+      wonDeals.push(deal);
+    }
+  }
+
+  return {
+    ok: true,
+    timezone: TASHKENT_TZ,
+    current_date: currentDate,
+    total_deals_loaded: deals.length,
+    pagination_pages: paginationPages,
+    today_created_count: stats.createdToday.count,
+    today_won_count: stats.wonToday.count,
+    today_created_total: stats.createdToday.total,
+    today_won_total: stats.wonToday.total,
+    today_created_deals: createdDeals.map(toDebugDeal),
+    today_won_deals: wonDeals.map(toDebugDeal),
   };
 }

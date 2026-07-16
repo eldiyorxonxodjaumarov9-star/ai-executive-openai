@@ -8,6 +8,9 @@
     },
     "app/api/test/openai/route.ts": {
       "maxDuration": 30
+    },
+    "app/api/debug/today-sales/route.ts": {
+      "maxDuration": 60
     }
   }
 }
