@@ -183,7 +183,7 @@ export function newId(): string {
 
 export function looksLikeCrmQuestion(question: string): boolean {
   const t = question.toLowerCase();
-  return /\b(bugun|bitim|savdo|sotuv|jami|mijoz|menejer|hisobot|voronka|moliya|xodim|marketing|lid|kontakt|yopil|ochiq|summasi|risk)\b/.test(
+  return /\b(bugun|bitim|savdo|sotuv|jami|mijoz|menejer|hisobot|voronka|moliya|xodim|marketing|lid|kontakt|yopil|ochiq|summasi|risk|tahlil|yuklama|reyting|pipeline|kpi)\b/.test(
     t
   );
 }
