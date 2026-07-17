@@ -1,8 +1,8 @@
 import type { NormalizedDeal } from "./deal-normalizer";
-import { formatMoney } from "./sales-analytics";
 import { parseBitrixDate } from "./tashkent-time";
 import type { KpiSnapshot } from "./kpi-engine";
 import type { RiskItem } from "./risk-engine";
+import { buildEmployeeAnalytics } from "./employee-analytics";
 
 export interface Recommendation {
   priority: "high" | "medium" | "low";
@@ -16,18 +16,10 @@ export function generateRecommendations(
   risks: RiskItem[]
 ): Recommendation[] {
   const recs: Recommendation[] = [];
+  const emp = buildEmployeeAnalytics(deals);
 
-  const workload = new Map<string, number>();
-  for (const d of deals.filter((x) => x.isOpen)) {
-    workload.set(d.assignedByName, (workload.get(d.assignedByName) || 0) + 1);
-  }
-  const overloaded = [...workload.entries()].sort((a, b) => b[1] - a[1])[0];
-  if (overloaded && overloaded[1] >= 8) {
-    recs.push({
-      priority: "high",
-      category: "hr",
-      text: `${overloaded[0]}dagi ${overloaded[1]} ta ochiq bitimni qayta taqsimlash tavsiya etiladi.`,
-    });
+  for (const text of emp.executiveRecommendations.slice(0, 6)) {
+    recs.push({ priority: "high", category: "executive", text });
   }
 
   if (kpis.conversionRate < 20 && kpis.open > 5) {
@@ -51,7 +43,7 @@ export function generateRecommendations(
     recs.push({
       priority: "high",
       category: "executive",
-      text: `${topRisks.length} ta risk deal mavjud — ${topRisks.map((r) => r.title).join(", ")}.`,
+      text: `${topRisks.length} ta risk deal mavjud — ${topRisks.map((r) => `${r.title}${r.manager ? ` (${r.manager})` : ""}`).join(", ")}.`,
     });
   }
 
@@ -76,18 +68,6 @@ export function generateRecommendations(
     });
   }
 
-  if (kpis.managerRanking.length >= 2) {
-    const top = kpis.managerRanking[0];
-    const bottom = kpis.managerRanking[kpis.managerRanking.length - 1];
-    if (top.wonCount === 0 && bottom.wonCount === 0 && kpis.open > 0) {
-      recs.push({
-        priority: "medium",
-        category: "executive",
-        text: "Hozircha yopilgan bitim yo'q — pipeline aktivligini oshiring.",
-      });
-    }
-  }
-
   if (recs.length === 0 && kpis.open > 0) {
     recs.push({
       priority: "low",
@@ -96,8 +76,15 @@ export function generateRecommendations(
     });
   }
 
-  return recs.sort((a, b) => {
-    const order = { high: 0, medium: 1, low: 2 };
-    return order[a.priority] - order[b.priority];
-  });
+  const seen = new Set<string>();
+  return recs
+    .filter((r) => {
+      if (seen.has(r.text)) return false;
+      seen.add(r.text);
+      return true;
+    })
+    .sort((a, b) => {
+      const order = { high: 0, medium: 1, low: 2 };
+      return order[a.priority] - order[b.priority];
+    });
 }

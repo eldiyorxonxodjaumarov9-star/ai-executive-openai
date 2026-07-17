@@ -77,7 +77,16 @@ export function buildAgentContextStructured(
       summary: bundle.base.summary,
       periodStats: bundle.base.periodStats,
       agentSpecific: bundle.agentSpecific,
-      managerPerformance: bundle.base.managerPerformance.slice(0, 5),
+      managerPerformance: bundle.base.managerPerformance,
+      employeeAnalytics: {
+        totalEmployees: bundle.employeeAnalytics.totalEmployees,
+        employees: bundle.employeeAnalytics.employees,
+        ranking: bundle.employeeAnalytics.ranking.slice(0, 10),
+        mostBusy: bundle.employeeAnalytics.mostBusy,
+        leastBusy: bundle.employeeAnalytics.leastBusy,
+        atRisk: bundle.employeeAnalytics.atRisk.slice(0, 8),
+        executiveRecommendations: bundle.employeeAnalytics.executiveRecommendations,
+      },
       stageBreakdown: bundle.base.stageBreakdown.slice(0, 8),
       topDeals: bundle.base.topDeals,
       notes: bundle.base.notes,
@@ -91,6 +100,10 @@ export function buildAgentContextBlock(
   agent: AgentId,
   structured: AgentContextStructured
 ): string {
+  const emp = structured.analytics.employeeAnalytics as
+    | { employees?: unknown[]; totalEmployees?: number }
+    | undefined;
+
   const lines = [
     AGENT_PROFESSIONAL_INSTRUCTIONS[agent],
     "",
@@ -107,6 +120,16 @@ export function buildAgentContextBlock(
     JSON.stringify(structured.analytics, null, 2),
   ];
 
+  if (emp?.employees && Array.isArray(emp.employees) && emp.employees.length > 0) {
+    lines.push(
+      "",
+      "=== XODIMLAR BO'YICHA TAHLIL (ASSIGNED_BY_ID → user.get) ===",
+      `Jami xodimlar: ${emp.totalEmployees ?? emp.employees.length}`,
+      "MUHIM: Javobda HAR BIR xodim uchun alohida raqamlar, pipeline, risk va tavsiya yozing. Faqat umumiy gap yozmang.",
+      JSON.stringify(emp.employees, null, 2)
+    );
+  }
+
   if (structured.limitations.length) {
     lines.push("", "=== CHEKLOVLAR ===", structured.limitations.join("\n"));
   }
@@ -114,7 +137,8 @@ export function buildAgentContextBlock(
   lines.push(
     "",
     "MUHIM: Oldingi suhbat yoki assistant javobidagi raqamlarga ishonmang. Faqat yuqoridagi analytics haqiqiy.",
-    "Agar davr bo'yicha 0 bo'lsa, umumiy summary ni ham tushuntiring — hech qachon faqat 'topilmadi' demang."
+    "Agar davr bo'yicha 0 bo'lsa, umumiy summary ni ham tushuntiring — hech qachon faqat 'topilmadi' demang.",
+    "Xodimlar so'ralganda: Xodimlar bo'yicha tahlil, Reyting, Eng band, Eng kam yuklangan, Riskdagi xodimlar, Rahbar tavsiyalari bo'limlarini majburiy yozing."
   );
 
   return lines.join("\n");

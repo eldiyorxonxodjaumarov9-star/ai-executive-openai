@@ -3,6 +3,10 @@ import type { RiskItem } from "./risk-engine";
 import type { ForecastBundle } from "./forecast-engine";
 import type { Recommendation } from "./recommendation-engine";
 import type { CrmAnalyticsContext } from "./crm-analytics";
+import {
+  formatEmployeeMarkdown,
+  type EmployeeAnalyticsBundle,
+} from "./employee-analytics";
 
 export interface ExecutiveReportInput {
   title: string;
@@ -14,10 +18,11 @@ export interface ExecutiveReportInput {
   recommendations: Recommendation[];
   limitations: string[];
   fetchedAt: string;
+  employeeAnalytics?: EmployeeAnalyticsBundle | null;
 }
 
 export function buildExecutiveReport(input: ExecutiveReportInput): string {
-  const { kpis, analytics, risks, forecasts, recommendations } = input;
+  const { kpis, analytics, risks, forecasts, recommendations, employeeAnalytics } = input;
   const lines: string[] = [
     `# ${input.title}`,
     "",
@@ -28,6 +33,9 @@ export function buildExecutiveReport(input: ExecutiveReportInput): string {
     `- Pipeline: **${kpis.pipelineFormatted}**`,
     `- Revenue (won): **${kpis.revenueFormatted}**`,
     `- Konversiya: **${kpis.conversionRate}%** · O'sish: **${kpis.growthPercent}%**`,
+    employeeAnalytics
+      ? `- Xodimlar (ASSIGNED_BY_ID): **${employeeAnalytics.totalEmployees}**`
+      : "",
     "",
     "## KPI",
     "| Ko'rsatkich | Qiymat |",
@@ -36,22 +44,30 @@ export function buildExecutiveReport(input: ExecutiveReportInput): string {
     `| Deal velocity | ${kpis.dealVelocityDays} kun |`,
     `| Risk score | ${kpis.riskScore}/100 |`,
     "",
-    "## Menejer reytingi",
-  ];
+  ].filter((l) => l !== undefined);
 
-  if (kpis.managerRanking.length) {
-    lines.push("| Menejer | Yutuq | Summa |", "|---|---|---|");
-    for (const m of kpis.managerRanking.slice(0, 8)) {
-      lines.push(`| ${m.name} | ${m.wonCount} | ${m.totalAmountFormatted} |`);
-    }
+  if (employeeAnalytics && employeeAnalytics.employees.length > 0) {
+    lines.push(formatEmployeeMarkdown(employeeAnalytics), "");
   } else {
-    lines.push("_Menejer ma'lumotlari yetarli emas._");
+    lines.push(
+      "## Menejer reytingi",
+      ""
+    );
+    if (kpis.managerRanking.length) {
+      lines.push("| Menejer | Yutuq | Summa |", "|---|---|---|");
+      for (const m of kpis.managerRanking.slice(0, 8)) {
+        lines.push(`| ${m.name} | ${m.wonCount} | ${m.totalAmountFormatted} |`);
+      }
+    } else {
+      lines.push("_Menejer ma'lumotlari yetarli emas._");
+    }
+    lines.push("");
   }
 
-  lines.push("", "## Risklar");
+  lines.push("## Risklar");
   if (risks.length) {
     for (const r of risks.slice(0, 6)) {
-      lines.push(`- **[${r.score}]** ${r.title}: ${r.detail}`);
+      lines.push(`- **[${r.score}]** ${r.title}: ${r.detail}${r.manager ? ` (${r.manager})` : ""}`);
     }
   } else {
     lines.push("_Yuqori risk signallari topilmadi._");
@@ -66,13 +82,18 @@ export function buildExecutiveReport(input: ExecutiveReportInput): string {
   );
 
   lines.push("", "## Tavsiyalar");
-  for (const rec of recommendations.slice(0, 6)) {
-    lines.push(`- **[${rec.priority.toUpperCase()}]** ${rec.text}`);
+  const recTexts = [
+    ...(employeeAnalytics?.executiveRecommendations || []),
+    ...recommendations.map((r) => r.text),
+  ];
+  const unique = [...new Set(recTexts)].slice(0, 10);
+  for (const text of unique) {
+    lines.push(`- ${text}`);
   }
 
   lines.push("", "## Action Items");
-  recommendations.slice(0, 4).forEach((rec, i) => {
-    lines.push(`${i + 1}. ${rec.text}`);
+  unique.slice(0, 5).forEach((text, i) => {
+    lines.push(`${i + 1}. ${text}`);
   });
 
   if (input.limitations.length) {

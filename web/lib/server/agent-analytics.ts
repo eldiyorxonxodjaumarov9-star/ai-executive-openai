@@ -7,10 +7,12 @@ import { getThisMonthRange } from "./date-range-parser";
 import { parseBitrixDate, isDateInRange } from "./tashkent-time";
 import type { BitrixLoadedData } from "./bitrix-data-loader";
 import type { CrmRecord } from "./bitrix";
+import { buildEmployeeAnalytics, type EmployeeAnalyticsBundle } from "./employee-analytics";
 
 export interface AgentAnalyticsBundle {
   base: CrmAnalyticsContext;
   agentSpecific: Record<string, unknown>;
+  employeeAnalytics: EmployeeAnalyticsBundle;
 }
 
 function leadSourceBreakdown(leads: CrmRecord[]): { source: string; count: number }[] {
@@ -87,6 +89,7 @@ export function buildAgentAnalytics(
 ): AgentAnalyticsBundle {
   const normalized = normalizeDeals(loaded.deals, loaded.stages, loaded.users);
   const base = buildCrmAnalytics(normalized, routing);
+  const employeeAnalytics = buildEmployeeAnalytics(normalized, loaded.activities);
 
   const agentSpecific: Record<string, unknown> = {};
 
@@ -105,9 +108,19 @@ export function buildAgentAnalytics(
           manager: d.assignedByName,
         })),
         recommendations: [
+          ...employeeAnalytics.executiveRecommendations.slice(0, 5),
           base.summary.openDeals > base.summary.wonDeals ? "Ochiq bitimlar ko'p — yopish jarayonini kuchaytiring" : null,
           base.summary.lostDeals > 0 ? `${base.summary.lostDeals} ta yutqazilgan bitim — sabablarni tahlil qiling` : null,
         ].filter(Boolean),
+      };
+      agentSpecific.employeeAnalytics = {
+        totalEmployees: employeeAnalytics.totalEmployees,
+        employees: employeeAnalytics.employees,
+        ranking: employeeAnalytics.ranking.slice(0, 10),
+        mostBusy: employeeAnalytics.mostBusy,
+        leastBusy: employeeAnalytics.leastBusy,
+        atRisk: employeeAnalytics.atRisk.slice(0, 8),
+        executiveRecommendations: employeeAnalytics.executiveRecommendations,
       };
       break;
 
@@ -129,6 +142,12 @@ export function buildAgentAnalytics(
       agentSpecific.sales = {
         funnel: base.stageBreakdown,
         managerRanking: base.managerPerformance,
+        employeeAnalytics: {
+          employees: employeeAnalytics.employees,
+          ranking: employeeAnalytics.ranking.slice(0, 10),
+          mostBusy: employeeAnalytics.mostBusy,
+          atRisk: employeeAnalytics.atRisk.slice(0, 8),
+        },
         wonRate: base.summary.totalDeals
           ? `${Math.round((base.summary.wonDeals / base.summary.totalDeals) * 100)}%`
           : "0%",
@@ -148,10 +167,15 @@ export function buildAgentAnalytics(
     case "hr":
       agentSpecific.hr = {
         employeeWorkload: employeeWorkload(normalized),
-        overloaded: employeeWorkload(normalized)
-          .filter((e) => e.openDeals >= 5)
-          .slice(0, 5),
-        lowPerformance: employeeWorkload(normalized)
+        employeeAnalytics: {
+          employees: employeeAnalytics.employees,
+          mostBusy: employeeAnalytics.mostBusy,
+          leastBusy: employeeAnalytics.leastBusy,
+          atRisk: employeeAnalytics.atRisk,
+          recommendations: employeeAnalytics.executiveRecommendations,
+        },
+        overloaded: employeeAnalytics.mostBusy.filter((e) => e.openDeals >= 5).slice(0, 5),
+        lowPerformance: employeeAnalytics.employees
           .filter((e) => e.totalDeals >= 3 && e.wonDeals === 0)
           .slice(0, 5),
         tasksCount: loaded.tasks.length,
@@ -198,5 +222,18 @@ export function buildAgentAnalytics(
     };
   }
 
-  return { base, agentSpecific };
+  // Har bir agent uchun xodim analytics majburiy (Bitrix ASSIGNED_BY_ID source of truth)
+  if (!agentSpecific.employeeAnalytics) {
+    agentSpecific.employeeAnalytics = {
+      totalEmployees: employeeAnalytics.totalEmployees,
+      employees: employeeAnalytics.employees,
+      ranking: employeeAnalytics.ranking.slice(0, 10),
+      mostBusy: employeeAnalytics.mostBusy,
+      leastBusy: employeeAnalytics.leastBusy,
+      atRisk: employeeAnalytics.atRisk.slice(0, 8),
+      executiveRecommendations: employeeAnalytics.executiveRecommendations,
+    };
+  }
+
+  return { base, agentSpecific, employeeAnalytics };
 }
