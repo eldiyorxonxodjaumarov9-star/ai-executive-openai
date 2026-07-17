@@ -53,7 +53,8 @@ export class CalculateForecastTool implements BitrixTool {
   async execute(ctx: ToolExecutionContext): Promise<ToolExecutionResult> {
     const start = Date.now();
     if (!ctx.kpis) ctx.kpis = calculateKpis(ctx.normalizedDeals, ctx.routing);
-    ctx.forecasts = calculateForecast(ctx.normalizedDeals, ctx.kpis);
+    const trends = ctx.analytics?.intelligence?.trends;
+    ctx.forecasts = calculateForecast(ctx.normalizedDeals, ctx.kpis, trends);
     return { name: this.name, success: true, durationMs: Date.now() - start };
   }
 }

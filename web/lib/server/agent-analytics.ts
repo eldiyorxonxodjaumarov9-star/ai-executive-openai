@@ -8,11 +8,16 @@ import { parseBitrixDate, isDateInRange } from "./tashkent-time";
 import type { BitrixLoadedData } from "./bitrix-data-loader";
 import type { CrmRecord } from "./bitrix";
 import { buildEmployeeAnalytics, type EmployeeAnalyticsBundle } from "./employee-analytics";
+import {
+  buildExecutiveIntelligence,
+  type ExecutiveIntelligence,
+} from "./executive-intelligence";
 
 export interface AgentAnalyticsBundle {
   base: CrmAnalyticsContext;
   agentSpecific: Record<string, unknown>;
   employeeAnalytics: EmployeeAnalyticsBundle;
+  intelligence: ExecutiveIntelligence;
 }
 
 function leadSourceBreakdown(leads: CrmRecord[]): { source: string; count: number }[] {
@@ -91,6 +96,54 @@ export function buildAgentAnalytics(
   const base = buildCrmAnalytics(normalized, routing);
   const employeeAnalytics = buildEmployeeAnalytics(normalized, loaded.activities);
 
+  // Intelligence uses already-loaded deals/activities — no extra Bitrix calls
+  const kpisLite = {
+    pipeline: base.summary.totalPipelineAmount,
+    pipelineFormatted: base.summary.totalPipelineAmountFormatted,
+    revenue: base.summary.wonAmount,
+    revenueFormatted: base.summary.wonAmountFormatted,
+    won: base.summary.wonDeals,
+    lost: base.summary.lostDeals,
+    open: base.summary.openDeals,
+    averageDeal: base.summary.averageDealAmount,
+    averageDealFormatted: base.summary.averageDealAmountFormatted,
+    conversionRate: base.summary.totalDeals
+      ? Math.round(
+          (base.summary.wonDeals / Math.max(1, base.summary.wonDeals + base.summary.lostDeals)) * 100
+        )
+      : 0,
+    managerRanking: base.managerPerformance.slice(0, 10).map((m) => ({
+      name: m.name,
+      wonCount: m.wonCount,
+      totalAmount: m.totalAmount,
+      totalAmountFormatted: m.totalAmountFormatted,
+    })),
+    dealVelocityDays: 0,
+    stageDistribution: base.stageBreakdown.slice(0, 8).map((s) => ({
+      stage: s.stage,
+      count: s.count,
+      percent: base.summary.totalDeals
+        ? Math.round((s.count / base.summary.totalDeals) * 100)
+        : 0,
+    })),
+    forecastNextMonth: 0,
+    forecastNextMonthFormatted: "0",
+    riskScore: Math.min(100, base.summary.lostDeals * 5 + employeeAnalytics.atRisk.length * 8),
+    growthPercent: 0,
+  };
+
+  const intelligence = buildExecutiveIntelligence(
+    normalized,
+    kpisLite,
+    [],
+    employeeAnalytics,
+    loaded.activities,
+    loaded.leads.length
+  );
+  // Align growth with trend engine
+  kpisLite.growthPercent =
+    intelligence.trends.kpiTrends.find((t) => t.label === "Pipeline")?.deltaPercent || 0;
+
   const agentSpecific: Record<string, unknown> = {};
 
   switch (agent) {
@@ -102,15 +155,17 @@ export function buildAgentAnalytics(
         lostDeals: base.summary.lostDeals,
         topManagers: base.managerPerformance.slice(0, 5),
         stageBreakdown: base.stageBreakdown.slice(0, 8),
+        executiveHealthScore: intelligence.executiveScore.overall,
+        insights: intelligence.insights,
+        earlyWarnings: intelligence.earlyWarnings,
         riskDeals: stuckDeals(normalized).slice(0, 5).map((d) => ({
           title: d.title,
           amount: formatMoney(d.opportunity),
           manager: d.assignedByName,
         })),
         recommendations: [
-          ...employeeAnalytics.executiveRecommendations.slice(0, 5),
-          base.summary.openDeals > base.summary.wonDeals ? "Ochiq bitimlar ko'p — yopish jarayonini kuchaytiring" : null,
-          base.summary.lostDeals > 0 ? `${base.summary.lostDeals} ta yutqazilgan bitim — sabablarni tahlil qiling` : null,
+          ...intelligence.recommendedActions.slice(0, 5).map((a) => a.text),
+          ...employeeAnalytics.executiveRecommendations.slice(0, 3),
         ].filter(Boolean),
       };
       agentSpecific.employeeAnalytics = {
@@ -222,18 +277,34 @@ export function buildAgentAnalytics(
     };
   }
 
-  // Har bir agent uchun xodim analytics majburiy (Bitrix ASSIGNED_BY_ID source of truth)
-  if (!agentSpecific.employeeAnalytics) {
-    agentSpecific.employeeAnalytics = {
-      totalEmployees: employeeAnalytics.totalEmployees,
-      employees: employeeAnalytics.employees,
-      ranking: employeeAnalytics.ranking.slice(0, 10),
-      mostBusy: employeeAnalytics.mostBusy,
-      leastBusy: employeeAnalytics.leastBusy,
-      atRisk: employeeAnalytics.atRisk.slice(0, 8),
-      executiveRecommendations: employeeAnalytics.executiveRecommendations,
-    };
-  }
+  // Har bir agent uchun xodim + intelligence majburiy
+  agentSpecific.employeeAnalytics = {
+    totalEmployees: employeeAnalytics.totalEmployees,
+    employees: employeeAnalytics.employees,
+    ranking: employeeAnalytics.ranking.slice(0, 10),
+    mostBusy: employeeAnalytics.mostBusy,
+    leastBusy: employeeAnalytics.leastBusy,
+    atRisk: employeeAnalytics.atRisk.slice(0, 8),
+    executiveRecommendations: employeeAnalytics.executiveRecommendations,
+  };
+  agentSpecific.executiveIntelligence = {
+    healthScore: intelligence.executiveScore.overall,
+    departments: intelligence.executiveScore.departments,
+    insights: intelligence.insights,
+    earlyWarnings: intelligence.earlyWarnings,
+    employeeScores: intelligence.employeeScores,
+    topImprovers: intelligence.topImprovers,
+    topDeclining: intelligence.topDeclining,
+    kpiTrends: intelligence.trends.kpiTrends,
+    forecasts: {
+      days7: intelligence.forecasts.nextWeek,
+      days30: intelligence.forecasts.nextMonth,
+      days90: intelligence.forecasts.days90,
+      narrative: intelligence.forecasts.narrative,
+    },
+    recommendedActions: intelligence.recommendedActions,
+    narrative: intelligence.executiveNarrative,
+  };
 
-  return { base, agentSpecific, employeeAnalytics };
+  return { base, agentSpecific, employeeAnalytics, intelligence };
 }

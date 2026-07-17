@@ -14,11 +14,12 @@ import { executePlan } from "./tool-orchestrator";
 import { buildContextTool } from "./tools/registry";
 import { buildExecutiveReport } from "./executive-report-builder";
 import { buildEmployeeAnalytics } from "./employee-analytics";
+import { buildExecutiveIntelligence } from "./executive-intelligence";
 import type { SalesFetchStatus } from "./sales-analytics";
 import type { OrchestratorResult } from "./tools/types";
 
 const EMPLOYEE_REPORT_RE =
-  /\b(hisobot|report|direktor|executive|xodim|menejer|yuklama|reyting|batafsil\s+tahlil|barcha\s+xodim)\b/i;
+  /\b(hisobot|report|direktor|executive|xodim|menejer|yuklama|reyting|batafsil\s+tahlil|barcha\s+xodim|trend|prognoz|forecast|insight|score)\b/i;
 
 export interface ExecutivePipelineOptions {
   bypassCache?: boolean;
@@ -116,17 +117,34 @@ export async function runExecutivePipeline(
       analyticsBundle.employeeAnalytics ||
       buildEmployeeAnalytics(context.normalizedDeals, context.loaded.activities);
 
+    const intelligence =
+      analyticsBundle.intelligence ||
+      buildExecutiveIntelligence(
+        context.normalizedDeals,
+        context.kpis,
+        context.risks,
+        employeeAnalytics,
+        context.loaded.activities,
+        context.loaded.leads.length
+      );
+
+    // Prefer intelligence forecasts (trend-aware)
+    if (intelligence.forecasts) {
+      context.forecasts = intelligence.forecasts;
+    }
+
     executiveReport = buildExecutiveReport({
       title: "Executive Intelligence Report",
       periodLabel: String(plan.filters.dateRange || routing.dateRange.label),
       kpis: context.kpis,
       analytics: analyticsBundle.base,
       risks: context.risks,
-      forecasts: context.forecasts,
+      forecasts: context.forecasts || intelligence.forecasts,
       recommendations: context.recommendations,
       limitations: context.loaded.limitations,
       fetchedAt: context.loaded.fetchedAt,
       employeeAnalytics,
+      intelligence,
     });
   }
 

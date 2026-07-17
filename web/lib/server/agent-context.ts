@@ -87,6 +87,22 @@ export function buildAgentContextStructured(
         atRisk: bundle.employeeAnalytics.atRisk.slice(0, 8),
         executiveRecommendations: bundle.employeeAnalytics.executiveRecommendations,
       },
+      executiveIntelligence: {
+        healthScore: bundle.intelligence.executiveScore.overall,
+        insights: bundle.intelligence.insights,
+        earlyWarnings: bundle.intelligence.earlyWarnings,
+        employeeScores: bundle.intelligence.employeeScores,
+        kpiTrends: bundle.intelligence.trends.kpiTrends,
+        topImprovers: bundle.intelligence.topImprovers,
+        topDeclining: bundle.intelligence.topDeclining,
+        recommendedActions: bundle.intelligence.recommendedActions,
+        narrative: bundle.intelligence.executiveNarrative,
+        forecasts: {
+          days7: bundle.intelligence.forecasts.nextWeek,
+          days30: bundle.intelligence.forecasts.nextMonth,
+          days90: bundle.intelligence.forecasts.days90,
+        },
+      },
       stageBreakdown: bundle.base.stageBreakdown.slice(0, 8),
       topDeals: bundle.base.topDeals,
       notes: bundle.base.notes,
@@ -138,7 +154,8 @@ export function buildAgentContextBlock(
     "",
     "MUHIM: Oldingi suhbat yoki assistant javobidagi raqamlarga ishonmang. Faqat yuqoridagi analytics haqiqiy.",
     "Agar davr bo'yicha 0 bo'lsa, umumiy summary ni ham tushuntiring — hech qachon faqat 'topilmadi' demang.",
-    "Xodimlar so'ralganda: Xodimlar bo'yicha tahlil, Reyting, Eng band, Eng kam yuklangan, Riskdagi xodimlar, Rahbar tavsiyalari bo'limlarini majburiy yozing."
+    "Xodimlar so'ralganda: Xodimlar bo'yicha tahlil, Reyting, Eng band, Eng kam yuklangan, Riskdagi xodimlar, Rahbar tavsiyalari bo'limlarini majburiy yozing.",
+    "Executive Intelligence: trendlar (7/30/90 kun), employee score, health score, insights, early warning, forecast va recommended actions ni raqamlar bilan yozing. Faqat joriy snapshot bilan cheklanmang."
   );
 
   return lines.join("\n");
