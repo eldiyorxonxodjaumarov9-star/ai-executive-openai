@@ -618,11 +618,14 @@
 }
 
 @media (min-width: 769px) {
-  .messageAiWrap:hover :global(.messageActionToolbar),
-  .messageAiWrap:focus-within :global(.messageActionToolbar) {
-    opacity: 1;
-    transform: translateY(0);
+  .messageAiWrapWithToolbar {
+    padding-top: 40px;
   }
+}
+
+.messageAiWrap .messageBody {
+  position: relative;
+  z-index: 1;
 }
 
 .messageBody p {

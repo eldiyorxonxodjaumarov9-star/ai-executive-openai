@@ -423,7 +423,7 @@ export default function ChatApp() {
                     {m.role === "user" ? userInitial : agentMeta.short}
                   </div>
                   {m.role === "assistant" ? (
-                    <div className={`${styles.messageAiWrap} messageAiWrap`}>
+                    <div className={`${styles.messageAiWrap} messageAiWrap ${isComplete ? styles.messageAiWrapWithToolbar : ""}`}>
                       {isComplete ? (
                         <MessageActionToolbar
                           content={m.content}
@@ -433,6 +433,10 @@ export default function ChatApp() {
                           disabled={loading}
                           onCopy={() => void copyAnswer(m.content)}
                           onRefresh={() => refreshMessage(m.id)}
+                          onSaved={() => {
+                            setToast("✅ Kutubxonaga saqlandi");
+                            setShowToast(true);
+                          }}
                         />
                       ) : null}
                       <div className={styles.messageBody}>

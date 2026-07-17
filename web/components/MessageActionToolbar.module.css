@@ -1,41 +1,60 @@
+/* Light-first toolbar theme — app is light by default */
 .toolbar {
+  --tb-bg: #ffffff;
+  --tb-border: #e5e7eb;
+  --tb-text: #111827;
+  --tb-icon: #374151;
+  --tb-hover: #f3f4f6;
+  --tb-shadow: 0 2px 8px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --dd-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+
   position: absolute;
   top: 0;
   right: 0;
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 4px;
-  border-radius: 10px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow);
+  gap: 4px;
+  padding: 4px 6px;
+  border-radius: 12px;
+  background: var(--tb-bg);
+  border: 1px solid var(--tb-border);
+  box-shadow: var(--tb-shadow);
   opacity: 0;
   transform: translateY(-2px);
   transition: opacity 0.15s ease, transform 0.15s ease;
-  z-index: 5;
+  z-index: 50;
 }
 
 .btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
-  padding: 6px 8px;
+  padding: 7px 9px;
   border-radius: 8px;
-  color: var(--muted);
-  font-size: 0.72rem;
+  color: var(--tb-icon);
+  font-size: 0.75rem;
   font-weight: 500;
+  line-height: 1;
   transition: background 0.12s, color 0.12s;
 }
 
 .btn:hover:not(:disabled) {
-  background: var(--bg-sidebar);
-  color: var(--text);
+  background: var(--tb-hover);
+  color: var(--tb-text);
+}
+
+.btn:active:not(:disabled) {
+  background: #e5e7eb;
 }
 
 .btn:disabled {
-  opacity: 0.45;
+  opacity: 0.5;
   cursor: not-allowed;
+}
+
+.btnSaved {
+  color: #059669;
 }
 
 .btnLabel {
@@ -47,38 +66,51 @@
 }
 
 .dropdown {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  right: 0;
-  min-width: 180px;
-  padding: 6px;
+  min-width: 220px;
+  padding: 8px;
   border-radius: 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-input);
-  z-index: 20;
+  background: #ffffff;
+  color: #111827;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+  z-index: 1000;
 }
 
 .dropdownItem {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
+  gap: 12px;
+  padding: 10px 12px;
   border-radius: 8px;
   text-align: left;
-  font-size: 0.82rem;
-  color: var(--text);
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #111827;
+  cursor: pointer;
   transition: background 0.12s;
 }
 
 .dropdownItem:hover:not(:disabled) {
-  background: var(--bg-sidebar);
+  background: #f3f4f6;
 }
 
 .dropdownItem:disabled {
-  opacity: 0.4;
+  opacity: 0.5;
   cursor: not-allowed;
+}
+
+.dropdownIcon {
+  flex-shrink: 0;
+  width: 20px;
+  text-align: center;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.dropdownLabel {
+  flex: 1;
+  color: #111827;
 }
 
 @media (max-width: 768px) {
@@ -86,13 +118,16 @@
     opacity: 1;
     transform: none;
     position: static;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
     width: fit-content;
     margin-left: auto;
+    max-width: calc(100vw - 48px);
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
 
-  .btnLabel {
-    display: none;
+  .dropdown {
+    max-width: calc(100vw - 24px);
   }
 }
 
@@ -104,37 +139,42 @@
   }
 }
 
-@media (prefers-color-scheme: dark) {
-  .toolbar {
-    background: #292524;
-    border-color: #44403c;
-  }
+/* Dark mode only when explicitly set on html — not OS preference alone */
+:global(html[data-theme="dark"]) .toolbar {
+  --tb-bg: #1f2937;
+  --tb-border: #374151;
+  --tb-text: #f9fafb;
+  --tb-icon: #d1d5db;
+  --tb-hover: #374151;
+  --tb-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
 
-  .dropdown {
-    background: #292524;
-    border-color: #44403c;
-  }
+:global(html[data-theme="dark"]) .dropdown {
+  background: #1f2937;
+  color: #f9fafb;
+  border-color: #374151;
+}
 
-  .btn:hover:not(:disabled),
-  .dropdownItem:hover:not(:disabled) {
-    background: #1c1917;
-  }
+:global(html[data-theme="dark"]) .dropdownItem {
+  color: #f9fafb;
+}
+
+:global(html[data-theme="dark"]) .dropdownLabel {
+  color: #f9fafb;
+}
+
+:global(html[data-theme="dark"]) .dropdownItem:hover:not(:disabled) {
+  background: #374151;
+}
+
+.btn:focus-visible,
+.dropdownItem:focus-visible {
+  outline: 2px solid #c96442;
+  outline-offset: 2px;
 }
 
 @media (prefers-contrast: more) {
   .toolbar {
     border-width: 2px;
   }
-
-  .btn:focus-visible,
-  .dropdownItem:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-  }
-}
-
-.btn:focus-visible,
-.dropdownItem:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
 }
