@@ -1,0 +1,140 @@
+.toolbar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 5;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+  transition: background 0.12s, color 0.12s;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--bg-sidebar);
+  color: var(--text);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btnLabel {
+  display: none;
+}
+
+.exportWrap {
+  position: relative;
+}
+
+.dropdown {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  min-width: 180px;
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-input);
+  z-index: 20;
+}
+
+.dropdownItem {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  text-align: left;
+  font-size: 0.82rem;
+  color: var(--text);
+  transition: background 0.12s;
+}
+
+.dropdownItem:hover:not(:disabled) {
+  background: var(--bg-sidebar);
+}
+
+.dropdownItem:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+@media (max-width: 768px) {
+  .toolbar {
+    opacity: 1;
+    transform: none;
+    position: static;
+    margin-bottom: 8px;
+    width: fit-content;
+    margin-left: auto;
+  }
+
+  .btnLabel {
+    display: none;
+  }
+}
+
+@media (min-width: 769px) {
+  :global(.messageAiWrap:hover) .toolbar,
+  :global(.messageAiWrap:focus-within) .toolbar {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .toolbar {
+    background: #292524;
+    border-color: #44403c;
+  }
+
+  .dropdown {
+    background: #292524;
+    border-color: #44403c;
+  }
+
+  .btn:hover:not(:disabled),
+  .dropdownItem:hover:not(:disabled) {
+    background: #1c1917;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .toolbar {
+    border-width: 2px;
+  }
+
+  .btn:focus-visible,
+  .dropdownItem:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+.btn:focus-visible,
+.dropdownItem:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

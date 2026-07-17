@@ -12,11 +12,15 @@
     "test:agents": "tsx scripts/test-agent-crm.ts"
   },
   "dependencies": {
+    "docx": "^9.7.1",
+    "file-saver": "^2.0.5",
+    "jspdf": "^4.2.1",
     "next": "^15.1.0",
     "openai": "^4.77.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-markdown": "^9.0.3"
+    "react-markdown": "^9.0.3",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

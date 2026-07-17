@@ -608,6 +608,21 @@
   line-height: 1.65;
   font-size: 0.95rem;
   color: var(--text);
+  position: relative;
+}
+
+.messageAiWrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+@media (min-width: 769px) {
+  .messageAiWrap:hover :global(.messageActionToolbar),
+  .messageAiWrap:focus-within :global(.messageActionToolbar) {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .messageBody p {
@@ -681,18 +696,7 @@
 }
 
 .copyBtn {
-  margin-top: 8px;
-  padding: 4px 10px;
-  font-size: 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.copyBtn:hover {
-  color: var(--text);
+  display: none;
 }
 
 /* ── Mobile ── */

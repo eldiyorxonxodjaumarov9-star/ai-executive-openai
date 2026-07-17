@@ -10,6 +10,8 @@ import {
   type AgentId,
   type ChatMessage,
 } from "@/lib/constants";
+import MessageActionToolbar from "./MessageActionToolbar";
+import Toast from "./Toast";
 import styles from "./ChatApp.module.css";
 
 const CHAT_PREFIX = "aiep_chat_";
@@ -126,7 +128,8 @@ export default function ChatApp() {
   const [health, setHealth] = useState<{ ok: boolean; openai: boolean } | null>(null);
   const [userName, setUserName] = useState("Foydalanuvchi");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [toast, setToast] = useState("");
+  const [showToast, setShowToast] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const conversationIdRef = useRef<string>(newId());
@@ -248,15 +251,43 @@ export default function ChatApp() {
     inputRef.current?.focus();
   };
 
-  const copyAnswer = async (text: string, id: string) => {
+  const getQuestionForMessage = useCallback(
+    (messageId: string): string | undefined => {
+      const idx = messages.findIndex((m) => m.id === messageId);
+      if (idx <= 0) return undefined;
+      for (let i = idx - 1; i >= 0; i--) {
+        if (messages[i].role === "user") return messages[i].content;
+      }
+      return undefined;
+    },
+    [messages]
+  );
+
+  const showCopyToast = useCallback(() => {
+    setToast("✅ Nusxalandi");
+    setShowToast(true);
+  }, []);
+
+  const copyAnswer = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      setCopiedId(id);
-      setTimeout(() => setCopiedId(null), 1500);
+      showCopyToast();
     } catch {
       setError("Nusxalash muvaffaqiyatsiz.");
     }
   };
+
+  const refreshMessage = useCallback(
+    (messageId: string) => {
+      const q = getQuestionForMessage(messageId) || lastQuestionRef.current;
+      if (!q) {
+        setError("Savol topilmadi — yangilab bo'lmaydi.");
+        return;
+      }
+      void send(q, { refresh: true });
+    },
+    [getQuestionForMessage, send]
+  );
 
   const selectAgent = (id: AgentId) => {
     setAgent(id);
@@ -373,7 +404,13 @@ export default function ChatApp() {
             </div>
           ) : (
             <div className={styles.thread}>
-              {messages.map((m) => (
+              {messages.map((m, msgIdx) => {
+                const isStreamingThis =
+                  loading && m.role === "assistant" && msgIdx === messages.length - 1 && !m.content;
+                const isComplete = m.role === "assistant" && m.content.trim().length > 0 && !isStreamingThis;
+                const userQ = m.role === "assistant" ? getQuestionForMessage(m.id) : undefined;
+
+                return (
                 <article
                   key={m.id}
                   className={`${styles.message} ${m.role === "user" ? styles.messageUser : styles.messageAi}`}
@@ -385,30 +422,35 @@ export default function ChatApp() {
                   >
                     {m.role === "user" ? userInitial : agentMeta.short}
                   </div>
-                  <div className={styles.messageBody}>
-                    {m.role === "assistant" ? (
-                      <>
+                  {m.role === "assistant" ? (
+                    <div className={`${styles.messageAiWrap} messageAiWrap`}>
+                      {isComplete ? (
+                        <MessageActionToolbar
+                          content={m.content}
+                          agentId={agent}
+                          agentLabel={agentMeta.label}
+                          userQuestion={userQ}
+                          disabled={loading}
+                          onCopy={() => void copyAnswer(m.content)}
+                          onRefresh={() => refreshMessage(m.id)}
+                        />
+                      ) : null}
+                      <div className={styles.messageBody}>
                         {m.content ? (
                           <ReactMarkdown>{m.content}</ReactMarkdown>
                         ) : loading ? (
                           <div className={styles.typing}>{loadingMessage}</div>
                         ) : null}
-                        {m.content ? (
-                          <button
-                            type="button"
-                            className={styles.copyBtn}
-                            onClick={() => copyAnswer(m.content, m.id)}
-                          >
-                            {copiedId === m.id ? "Nusxalandi" : "Nusxalash"}
-                          </button>
-                        ) : null}
-                      </>
-                    ) : (
+                      </div>
+                    </div>
+                  ) : (
+                    <div className={styles.messageBody}>
                       <p>{m.content}</p>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </article>
-              ))}
+              );
+              })}
               {loading && messages[messages.length - 1]?.role !== "assistant" && (
                 <article className={`${styles.message} ${styles.messageAi}`}>
                   <div className={`${styles.messageAvatar} ${styles[`messageAvatar_${agent}`]}`}>
@@ -444,6 +486,7 @@ export default function ChatApp() {
           error={error}
         />
       </main>
+      <Toast message={toast} visible={showToast} onHide={() => setShowToast(false)} />
     </div>
   );
 }
