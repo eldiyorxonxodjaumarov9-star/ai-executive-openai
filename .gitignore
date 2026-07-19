@@ -6,6 +6,10 @@ venv/
 .venv/
 env/
 
+# Local source documents (not part of Next.js deploy)
+Biznes agentlar malumotlar/
+~$*.docx
+
 # Python
 __pycache__/
 *.py[cod]
