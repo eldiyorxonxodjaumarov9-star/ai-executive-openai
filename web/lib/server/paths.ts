@@ -1,8 +1,9 @@
 import path from "path";
 
-/**
- * Optional on-disk content under web/ (may be empty until new architecture adds files).
- * Loaders treat missing directories as empty content.
- */
+/** CEO document knowledge lives under web/data/knowledge/ceo */
+export function getCeoKnowledgeDir(): string {
+  return path.join(process.cwd(), "data", "knowledge", "ceo");
+}
+
 export const BRAINS_DIR = path.join(process.cwd(), "content", "brains");
 export const KNOWLEDGE_DIR = path.join(process.cwd(), "content", "knowledge");

@@ -11,7 +11,7 @@ export class BitrixError extends Error {
   }
 }
 
-type CrmRecord = Record<string, unknown>;
+export type CrmRecord = Record<string, unknown>;
 
 export interface DealStageInfo {
   name: string;
@@ -128,7 +128,7 @@ async function bitrixCall(method: string, params: CrmRecord = {}): Promise<unkno
   return data.result;
 }
 
-async function listAllPaginated(
+export async function listAllPaginated(
   method: string,
   params: { select: string[]; order?: Record<string, string>; filter?: CrmRecord },
   options: { maxRecords?: number } = {}
@@ -380,6 +380,98 @@ export async function fetchTasks(): Promise<CrmRecord[]> {
   }
 }
 
+/** Full pagination for tasks (CEO tool path). */
+export async function fetchAllTasksComplete(): Promise<CrmRecord[]> {
+  const collected: CrmRecord[] = [];
+  let start: number | undefined = 0;
+  let page = 0;
+  try {
+    while (page < 500 && collected.length < 10000) {
+      page += 1;
+      const data = await bitrixCallRaw("tasks.task.list", {
+        order: { CHANGED_DATE: "DESC" },
+        select: ["ID", "TITLE", "DESCRIPTION", "STATUS", "DEADLINE", "CREATED_DATE", "CHANGED_DATE", "RESPONSIBLE_ID"],
+        start,
+      });
+      const raw = data.result as { tasks?: CrmRecord[] } | CrmRecord[] | undefined;
+      let batch: CrmRecord[] = [];
+      if (raw && typeof raw === "object" && !Array.isArray(raw) && "tasks" in raw) {
+        batch = (raw.tasks as CrmRecord[]) || [];
+      } else if (Array.isArray(raw)) {
+        batch = raw;
+      }
+      if (!batch.length) break;
+      collected.push(...batch.map(normalizeRecord));
+      if (data.next === undefined || data.next === null) break;
+      start = data.next;
+    }
+  } catch {
+    return collected;
+  }
+  return collected;
+}
+
+export async function fetchAllLeadsComplete(): Promise<CrmRecord[]> {
+  const { items } = await listAllPaginated(
+    "crm.lead.list",
+    {
+      select: [
+        "ID",
+        "TITLE",
+        "NAME",
+        "LAST_NAME",
+        "OPPORTUNITY",
+        "DATE_CREATE",
+        "DATE_MODIFY",
+        "ASSIGNED_BY_ID",
+        "SOURCE_ID",
+        "STATUS_ID",
+      ],
+      order: { DATE_MODIFY: "DESC" },
+    },
+    { maxRecords: 10000 }
+  );
+  return items;
+}
+
+export async function fetchAllContactsComplete(): Promise<CrmRecord[]> {
+  const { items } = await listAllPaginated(
+    "crm.contact.list",
+    {
+      select: [
+        "ID",
+        "NAME",
+        "LAST_NAME",
+        "PHONE",
+        "EMAIL",
+        "DATE_CREATE",
+        "DATE_MODIFY",
+        "COMPANY_ID",
+        "SOURCE_ID",
+      ],
+      order: { DATE_MODIFY: "DESC" },
+    },
+    { maxRecords: 10000 }
+  );
+  return items;
+}
+
+export async function fetchAllCompaniesComplete(): Promise<CrmRecord[]> {
+  try {
+    const { items } = await listAllPaginated(
+      "crm.company.list",
+      {
+        select: ["ID", "TITLE", "DATE_CREATE", "DATE_MODIFY", "ASSIGNED_BY_ID"],
+        order: { DATE_MODIFY: "DESC" },
+      },
+      { maxRecords: 10000 }
+    );
+    return items;
+  } catch {
+    return [];
+  }
+}
+
 export async function fetchAllCrm(): Promise<CrmPayload> {
   const [leads, deals, contacts, tasks] = await Promise.all([
     fetchLeads(),
@@ -464,5 +556,3 @@ export interface CrmPayload {
   fetchStatus?: import("./sales-analytics").SalesFetchStatus;
   fetchLogReason?: string;
 }
-
-export type { CrmRecord };

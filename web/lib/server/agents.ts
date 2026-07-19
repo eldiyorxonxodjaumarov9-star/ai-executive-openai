@@ -11,6 +11,7 @@ import {
 } from "./constants";
 import { AGENT_PROFESSIONAL_INSTRUCTIONS } from "./agent-crm-config";
 import { appendFreshnessToAnswer } from "./agent-context";
+import { runCeoAnswer, runCeoAnswerStream } from "./ceo/pipeline";
 import { runExecutivePipeline } from "./executive-pipeline";
 import { analyzeRouteIntent, type IntentType } from "./intent-router";
 import { loadKnowledgeForIntent } from "./knowledge-router";
@@ -35,7 +36,7 @@ export interface QuickAnswerResult {
   crmEntities: string[];
   crmFetchStatus?: SalesFetchStatus;
   dataFreshness?: { fetchedAt: string; cached: boolean };
-  mode?: "quick_answer" | "executive_v2";
+  mode?: "quick_answer" | "executive_v2" | "ceo_v1";
   executionMs?: number;
 }
 
@@ -121,6 +122,23 @@ export async function runQuickAnswer(
   const agent = normalizeAgent(agentName);
   const q = question.trim();
   if (!q) throw new Error("Savol bo'sh bo'lishi mumkin emas.");
+
+  // CEO agent: independent document-grounded + Bitrix24 pipeline
+  if (agent === "ceo") {
+    const ceo = await runCeoAnswer(q, options);
+    return {
+      answer: ceo.answer,
+      intent: ceo.intent,
+      domainIntent: ceo.domainIntent,
+      crmSummary: ceo.crmSummary,
+      brainFiles: ceo.brainFiles,
+      knowledgeFiles: ceo.knowledgeFiles,
+      crmEntities: ceo.crmEntities,
+      dataFreshness: ceo.dataFreshness,
+      mode: ceo.mode,
+      executionMs: ceo.executionMs,
+    };
+  }
 
   const route = analyzeRouteIntent(q);
   const systemPrompt = buildSystemPrompt(agent, route.type);
@@ -254,7 +272,7 @@ export type { AgentId };
 export type StreamEvent =
   | { type: "status"; message: string; phase: "bitrix" | "reasoning" | "generating" }
   | { type: "delta"; text: string }
-  | { type: "done"; answer: string; mode: "quick_answer" | "executive_v2" };
+  | { type: "done"; answer: string; mode: "quick_answer" | "executive_v2" | "ceo_v1" };
 
 export async function* runQuickAnswerStream(
   agentName: string,
@@ -264,6 +282,13 @@ export async function* runQuickAnswerStream(
   const agent = normalizeAgent(agentName);
   const q = question.trim();
   if (!q) throw new Error("Savol bo'sh bo'lishi mumkin emas.");
+
+  if (agent === "ceo") {
+    for await (const event of runCeoAnswerStream(q, options)) {
+      yield event;
+    }
+    return;
+  }
 
   const route = analyzeRouteIntent(q);
   const systemPrompt = buildSystemPrompt(agent, route.type);
