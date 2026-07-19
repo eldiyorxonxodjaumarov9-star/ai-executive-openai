@@ -1,9 +1,8 @@
 import path from "path";
 
-/** Repo root (parent of web/) — brains and knowledge live outside the Next app dir. */
-export function getRepoRoot(): string {
-  return path.join(process.cwd(), "..");
-}
-
-export const BRAINS_DIR = path.join(getRepoRoot(), "brains");
-export const KNOWLEDGE_DIR = path.join(getRepoRoot(), "knowledge");
+/**
+ * Optional on-disk content under web/ (may be empty until new architecture adds files).
+ * Loaders treat missing directories as empty content.
+ */
+export const BRAINS_DIR = path.join(process.cwd(), "content", "brains");
+export const KNOWLEDGE_DIR = path.join(process.cwd(), "content", "knowledge");

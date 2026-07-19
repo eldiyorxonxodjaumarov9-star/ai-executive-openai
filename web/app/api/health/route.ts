@@ -17,7 +17,6 @@ export async function GET() {
     ai_provider: "openai",
     ai_configured: openaiConfigured,
     openai_configured: openaiConfigured,
-    claude_legacy_configured: false,
     ai_model: env.openaiModel,
   });
 }
