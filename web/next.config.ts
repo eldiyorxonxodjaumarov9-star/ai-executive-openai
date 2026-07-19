@@ -3,8 +3,8 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   outputFileTracingIncludes: {
-    "/api/chat/agent/[agent]": ["../legacy/brains/**/*", "../knowledge/**/*"],
-    "/api/test/openai": ["../legacy/brains/**/*", "../knowledge/**/*"],
+    "/api/chat/agent/[agent]": ["../brains/**/*", "../knowledge/**/*"],
+    "/api/test/openai": ["../brains/**/*", "../knowledge/**/*"],
   },
 };
 

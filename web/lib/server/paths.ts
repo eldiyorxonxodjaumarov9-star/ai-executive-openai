@@ -5,5 +5,5 @@ export function getRepoRoot(): string {
   return path.join(process.cwd(), "..");
 }
 
-export const BRAINS_DIR = path.join(getRepoRoot(), "legacy", "brains");
+export const BRAINS_DIR = path.join(getRepoRoot(), "brains");
 export const KNOWLEDGE_DIR = path.join(getRepoRoot(), "knowledge");

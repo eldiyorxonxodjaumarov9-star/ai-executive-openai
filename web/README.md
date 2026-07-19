@@ -8,7 +8,7 @@ Tezkor, mobilga mos AI chat: Bitrix24 + OpenAI.
 Brauzer → Next.js (Vercel) → Bitrix24 REST → OpenAI Responses API → o'zbekcha javob
 ```
 
-Render, Claude, Chrome extension va MCP **ishlatilmaydi** (legacy/ papkada).
+Render, Claude, Chrome extension va MCP **ishlatilmaydi**.
 
 ## Vercel deploy
 

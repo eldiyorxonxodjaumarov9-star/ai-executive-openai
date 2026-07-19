@@ -24,10 +24,6 @@ BITRIX24_WEBHOOK_URL=https://your.bitrix24.uz/rest/1/token/
 
 Batafsil: [`web/README.md`](web/README.md)
 
-## Legacy
-
-Eski FastAPI (Render), Chrome extension va MCP kodlari `legacy/` papkasida saqlangan — production build ularga bog'liq emas.
-
 ## Mahalliy test
 
 ```bash
