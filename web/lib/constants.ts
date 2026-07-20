@@ -7,6 +7,13 @@ export const AGENTS = [
   { id: "customer_success", label: "Mijozlar agenti", short: "J", color: "#0EA5E9" },
 ] as const;
 
+/** Demo UI: faqat production-ready agentlar ko'rsatiladi. */
+export const DEMO_AGENT_IDS = ["ceo", "finance", "hr", "customer_success"] as const;
+
+export const DEMO_AGENTS = AGENTS.filter((a) =>
+  (DEMO_AGENT_IDS as readonly string[]).includes(a.id)
+);
+
 export type AgentId = (typeof AGENTS)[number]["id"];
 
 export interface ChatMessage {

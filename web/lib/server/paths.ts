@@ -25,5 +25,15 @@ export function getCustomerSuccessKnowledgeDir(): string {
   return path.join(process.cwd(), "data", "knowledge", "customer-success");
 }
 
+/** Shared Procurement knowledge lives under web/data/knowledge/procurement */
+export function getProcurementKnowledgeDir(): string {
+  return path.join(process.cwd(), "data", "knowledge", "procurement");
+}
+
+/** HR knowledge lives under web/data/knowledge/hr */
+export function getHrKnowledgeDir(): string {
+  return path.join(process.cwd(), "data", "knowledge", "hr");
+}
+
 export const BRAINS_DIR = path.join(process.cwd(), "content", "brains");
 export const KNOWLEDGE_DIR = path.join(process.cwd(), "content", "knowledge");

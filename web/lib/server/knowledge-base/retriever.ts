@@ -64,6 +64,30 @@ function expandQueryTerms(terms: string[]): string[] {
   ) {
     add("savdo", "sotuv", "lead", "lid", "bitim", "konversiya", "follow", "pipeline", "menejer", "kpi");
   }
+  if (
+    set.has("taminot") ||
+    set.has("ta'minot") ||
+    set.has("yetkazib") ||
+    set.has("xarid") ||
+    set.has("ombor") ||
+    set.has("zaxira") ||
+    set.has("logistika") ||
+    set.has("procurement")
+  ) {
+    add("taminot", "xarid", "yetkazib", "logistika", "ombor", "zaxira", "shartnoma", "sla", "kpi", "aq-02");
+  }
+  if (
+    set.has("onboarding") ||
+    set.has("rekrut") ||
+    set.has("xodim") ||
+    set.has("kpi") ||
+    set.has("motivatsiya") ||
+    set.has("turnover") ||
+    set.has("performance") ||
+    set.has("hr")
+  ) {
+    add("onboarding", "rekrut", "xodim", "kpi", "motivatsiya", "turnover", "performance", "hr", "aq-hr");
+  }
   return [...terms, ...extra];
 }
 

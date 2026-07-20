@@ -18,6 +18,7 @@ import {
   runCustomerSuccessAnswer,
   runCustomerSuccessAnswerStream,
 } from "./customer-success/pipeline";
+import { runHrAnswer, runHrAnswerStream } from "./hr/pipeline";
 import { runExecutivePipeline } from "./executive-pipeline";
 import { analyzeRouteIntent, type IntentType } from "./intent-router";
 import { loadKnowledgeForIntent } from "./knowledge-router";
@@ -48,7 +49,8 @@ export interface QuickAnswerResult {
     | "ceo_v1"
     | "finance_v1"
     | "sales_v1"
-    | "customer_success_v1";
+    | "customer_success_v1"
+    | "hr_v1";
   executionMs?: number;
 }
 
@@ -203,6 +205,23 @@ export async function runQuickAnswer(
     };
   }
 
+  // HR agent: independent document-grounded + Bitrix24 pipeline
+  if (agent === "hr") {
+    const hr = await runHrAnswer(q, options);
+    return {
+      answer: hr.answer,
+      intent: hr.intent,
+      domainIntent: hr.domainIntent,
+      crmSummary: hr.crmSummary,
+      brainFiles: hr.brainFiles,
+      knowledgeFiles: hr.knowledgeFiles,
+      crmEntities: hr.crmEntities,
+      dataFreshness: hr.dataFreshness,
+      mode: hr.mode,
+      executionMs: hr.executionMs,
+    };
+  }
+
   const route = analyzeRouteIntent(q);
   const systemPrompt = buildSystemPrompt(agent, route.type);
 
@@ -344,7 +363,8 @@ export type StreamEvent =
         | "ceo_v1"
         | "finance_v1"
         | "sales_v1"
-        | "customer_success_v1";
+        | "customer_success_v1"
+        | "hr_v1";
     };
 
 export async function* runQuickAnswerStream(
@@ -379,6 +399,13 @@ export async function* runQuickAnswerStream(
 
   if (agent === "customer_success") {
     for await (const event of runCustomerSuccessAnswerStream(q, options)) {
+      yield event;
+    }
+    return;
+  }
+
+  if (agent === "hr") {
+    for await (const event of runHrAnswerStream(q, options)) {
       yield event;
     }
     return;

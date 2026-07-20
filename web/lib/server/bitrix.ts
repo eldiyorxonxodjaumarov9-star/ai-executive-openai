@@ -284,6 +284,64 @@ export async function fetchUsersByIds(ids: string[]): Promise<Map<string, Bitrix
   return map;
 }
 
+const activeUsersCache: { users: BitrixUserInfo[]; expiresAt: number } = {
+  users: [],
+  expiresAt: 0,
+};
+const departmentsCache: { items: CrmRecord[]; expiresAt: number } = {
+  items: [],
+  expiresAt: 0,
+};
+const HR_LIST_CACHE_TTL_MS = 5 * 60 * 1000;
+
+/** Full pagination for active Bitrix24 users (HR workloads). */
+export async function fetchAllActiveUsers(): Promise<BitrixUserInfo[]> {
+  if (activeUsersCache.users.length && Date.now() < activeUsersCache.expiresAt) {
+    return activeUsersCache.users;
+  }
+
+  const { items } = await listAllPaginated(
+    "user.get",
+    {
+      select: ["ID", "NAME", "LAST_NAME", "WORK_POSITION", "UF_DEPARTMENT", "ACTIVE"],
+      filter: { ACTIVE: true },
+    },
+    { maxRecords: 5000 }
+  );
+
+  const users = items
+    .filter((u) => String(u.ACTIVE ?? "Y") !== "N")
+    .map(mapUser)
+    .filter((u) => u.id);
+
+  activeUsersCache.users = users;
+  activeUsersCache.expiresAt = Date.now() + HR_LIST_CACHE_TTL_MS;
+  safeLog("info", "Faol foydalanuvchilar yuklandi", { count: users.length });
+  return users;
+}
+
+/** Department tree from Bitrix24 (cached). */
+export async function fetchAllDepartments(): Promise<CrmRecord[]> {
+  if (departmentsCache.items.length && Date.now() < departmentsCache.expiresAt) {
+    return departmentsCache.items;
+  }
+
+  try {
+    const { items } = await listAllPaginated(
+      "department.get",
+      { select: ["ID", "NAME", "PARENT", "UF_HEAD"] },
+      { maxRecords: 2000 }
+    );
+    departmentsCache.items = items;
+    departmentsCache.expiresAt = Date.now() + HR_LIST_CACHE_TTL_MS;
+    safeLog("info", "Bo'limlar yuklandi", { count: items.length });
+    return items;
+  } catch (e) {
+    safeLog("warn", "department.get xato", { error: e instanceof Error ? e.message : "unknown" });
+    return [];
+  }
+}
+
 export async function searchUsersByName(name: string): Promise<CrmRecord[]> {
   if (!name.trim()) return [];
   try {

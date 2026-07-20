@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import { ApiError, checkHealth, looksLikeCrmQuestion, newId, quickChatStream } from "@/lib/api";
 import {
   AGENTS,
+  DEMO_AGENTS,
   SUGGESTIONS,
   USER_NAME_KEY,
   type AgentId,
@@ -136,7 +137,7 @@ export default function ChatApp() {
   const lastQuestionRef = useRef<string>("");
   const [loadingMessage, setLoadingMessage] = useState("Javob tayyorlanmoqda...");
 
-  const agentMeta = AGENTS.find((a) => a.id === agent)!;
+  const agentMeta = AGENTS.find((a) => a.id === agent) ?? DEMO_AGENTS[0];
   const hasMessages = messages.length > 0;
 
   useEffect(() => {
@@ -321,7 +322,7 @@ export default function ChatApp() {
 
         <nav className={styles.agentSection}>
           <p className={styles.sectionLabel}>Agentlar</p>
-          {AGENTS.map((a) => (
+          {DEMO_AGENTS.map((a) => (
             <button
               key={a.id}
               type="button"
@@ -359,7 +360,7 @@ export default function ChatApp() {
             disabled={loading}
             aria-label="Agent tanlash"
           >
-            {AGENTS.map((a) => (
+            {DEMO_AGENTS.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.label}
               </option>
