@@ -12,6 +12,7 @@ import {
 import { AGENT_PROFESSIONAL_INSTRUCTIONS } from "./agent-crm-config";
 import { appendFreshnessToAnswer } from "./agent-context";
 import { runCeoAnswer, runCeoAnswerStream } from "./ceo/pipeline";
+import { runFinanceAnswer, runFinanceAnswerStream } from "./finance/pipeline";
 import { runExecutivePipeline } from "./executive-pipeline";
 import { analyzeRouteIntent, type IntentType } from "./intent-router";
 import { loadKnowledgeForIntent } from "./knowledge-router";
@@ -36,7 +37,7 @@ export interface QuickAnswerResult {
   crmEntities: string[];
   crmFetchStatus?: SalesFetchStatus;
   dataFreshness?: { fetchedAt: string; cached: boolean };
-  mode?: "quick_answer" | "executive_v2" | "ceo_v1";
+  mode?: "quick_answer" | "executive_v2" | "ceo_v1" | "finance_v1";
   executionMs?: number;
 }
 
@@ -137,6 +138,23 @@ export async function runQuickAnswer(
       dataFreshness: ceo.dataFreshness,
       mode: ceo.mode,
       executionMs: ceo.executionMs,
+    };
+  }
+
+  // Finance agent: independent document-grounded + Bitrix24 pipeline
+  if (agent === "finance") {
+    const finance = await runFinanceAnswer(q, options);
+    return {
+      answer: finance.answer,
+      intent: finance.intent,
+      domainIntent: finance.domainIntent,
+      crmSummary: finance.crmSummary,
+      brainFiles: finance.brainFiles,
+      knowledgeFiles: finance.knowledgeFiles,
+      crmEntities: finance.crmEntities,
+      dataFreshness: finance.dataFreshness,
+      mode: finance.mode,
+      executionMs: finance.executionMs,
     };
   }
 
@@ -272,7 +290,7 @@ export type { AgentId };
 export type StreamEvent =
   | { type: "status"; message: string; phase: "bitrix" | "reasoning" | "generating" }
   | { type: "delta"; text: string }
-  | { type: "done"; answer: string; mode: "quick_answer" | "executive_v2" | "ceo_v1" };
+  | { type: "done"; answer: string; mode: "quick_answer" | "executive_v2" | "ceo_v1" | "finance_v1" };
 
 export async function* runQuickAnswerStream(
   agentName: string,
@@ -285,6 +303,13 @@ export async function* runQuickAnswerStream(
 
   if (agent === "ceo") {
     for await (const event of runCeoAnswerStream(q, options)) {
+      yield event;
+    }
+    return;
+  }
+
+  if (agent === "finance") {
+    for await (const event of runFinanceAnswerStream(q, options)) {
       yield event;
     }
     return;

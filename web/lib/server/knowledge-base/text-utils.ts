@@ -16,13 +16,19 @@ export function inferTopicFromFileName(fileName: string): { topic: string; docum
   const lower = base.toLowerCase();
 
   const map: Array<{ match: RegExp; topic: string; documentType: string }> = [
+    { match: /aq-03_1/, topic: "moliya_nazorat_qoidalari", documentType: "finance_playbook" },
+    { match: /aq-03_2/, topic: "moliya_tushum_xarajat", documentType: "finance_playbook" },
+    { match: /aq-03_3/, topic: "moliya_debitor_pul_oqimi", documentType: "finance_playbook" },
+    { match: /aq-03_4/, topic: "moliya_kpi_hisobot", documentType: "finance_playbook" },
+    { match: /aq-03_5/, topic: "moliya_tavsiya_risk", documentType: "finance_playbook" },
+    { match: /aq-03|moliya_direktori/, topic: "moliya_amaliy_qollanma", documentType: "finance_playbook" },
     { match: /hba-01|davlat/, topic: "davlat_tashkilotlari", documentType: "architecture_layer" },
     { match: /hba-02|sotuv/, topic: "sotuv", documentType: "architecture_layer" },
     { match: /hba-03|tijoriy|taklif|taminotch/, topic: "tijoriy_taklif", documentType: "architecture_layer" },
     { match: /hba-04|broker/, topic: "brokerlar", documentType: "architecture_layer" },
     { match: /hba-05|taminot|logistik/, topic: "taminot_logistika", documentType: "architecture_layer" },
     { match: /hba-06|hujjat/, topic: "hujjatlashtirish", documentType: "architecture_layer" },
-    { match: /hba-07|moliya/, topic: "moliya", documentType: "architecture_layer" },
+    { match: /hba-07/, topic: "moliya", documentType: "architecture_layer" },
     { match: /hba-08|mijoz|xizmat/, topic: "mijozlarga_xizmat", documentType: "architecture_layer" },
     { match: /hba-09|boshqaruv/, topic: "boshqaruv", documentType: "architecture_layer" },
   ];
