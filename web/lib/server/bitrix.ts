@@ -41,6 +41,8 @@ export const DEAL_SELECT_FIELDS = [
   "CLOSED",
   "ASSIGNED_BY_ID",
   "CATEGORY_ID",
+  "CONTACT_ID",
+  "COMPANY_ID",
 ] as const;
 
 const stageCache: { map: Map<string, DealStageInfo>; expiresAt: number } = {
@@ -348,12 +350,43 @@ export async function fetchActivities(): Promise<CrmRecord[]> {
   try {
     const raw = await bitrixCallRaw("crm.activity.list", {
       order: { CREATED: "DESC" },
-      select: ["ID", "SUBJECT", "DESCRIPTION", "CREATED", "COMPLETED", "OWNER_TYPE_ID", "OWNER_ID"],
+      select: ["ID", "SUBJECT", "DESCRIPTION", "CREATED", "COMPLETED", "OWNER_TYPE_ID", "OWNER_ID", "TYPE_ID"],
     });
     const items = Array.isArray(raw.result) ? raw.result : [];
     return items.slice(0, 50).map(normalizeRecord);
   } catch (e) {
     safeLog("warn", "crm.activity.list mavjud emas yoki ruxsat yo'q", {
+      error: e instanceof Error ? e.message : "unknown",
+    });
+    return [];
+  }
+}
+
+/** Full pagination for CRM activities (Customer Success tool path). */
+export async function fetchAllActivitiesComplete(): Promise<CrmRecord[]> {
+  try {
+    const { items } = await listAllPaginated(
+      "crm.activity.list",
+      {
+        select: [
+          "ID",
+          "SUBJECT",
+          "DESCRIPTION",
+          "CREATED",
+          "LAST_UPDATED",
+          "COMPLETED",
+          "OWNER_TYPE_ID",
+          "OWNER_ID",
+          "TYPE_ID",
+          "PROVIDER_ID",
+        ],
+        order: { CREATED: "DESC" },
+      },
+      { maxRecords: 10000 }
+    );
+    return items;
+  } catch (e) {
+    safeLog("warn", "crm.activity.list to'liq pagination muvaffaqiyatsiz", {
       error: e instanceof Error ? e.message : "unknown",
     });
     return [];
