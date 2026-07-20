@@ -1,16 +1,13 @@
 /**
- * CEO BP-09: 6 ta direktor agent pipeline orqali strukturali hisobot yig'ish.
+ * CEO BP-09: 6 ta direktor agentdan strukturali brief yig'ish.
+ * Sub-agentlar knowledge+CRM agregatsiya qiladi (OpenAI chaqirmaydi).
+ * Yakuniy Executive Report faqat CEO OpenAI chaqiruvida yoziladi.
  */
-import { runSalesAnswer } from "../sales/pipeline";
-import { runFinanceAnswer } from "../finance/pipeline";
-import { runHrAnswer } from "../hr/pipeline";
-import { runCustomerSuccessAnswer } from "../customer-success/pipeline";
-import { runProcurementAnswer } from "../procurement/pipeline";
-import { runBusinessAnalyticsAnswer } from "../business-analytics/pipeline";
 import type { AgentStructuredResult } from "../agent-result";
 import { resolveCeoOrchestrationAgents } from "../router/route-query";
 import { CEO_ORCHESTRATION_AGENTS } from "../org/structure";
 import type { RoutableAgentId } from "../router/types";
+import { collectDirectorBrief } from "./director-briefs";
 import { devLog } from "../dev-log";
 
 export interface DirectorStructuredReport {
@@ -42,34 +39,7 @@ const AGENT_LABELS: Record<RoutableAgentId, string> = {
   business_analytics: "IT va biznes analitika (BP-08)",
 };
 
-const BRIEF_QUESTIONS: Partial<Record<RoutableAgentId, string>> = {
-  sales: "Savdo holatini qisqacha hisobot qil.",
-  procurement: "Ta'minot va yetkazib berish holatini qisqacha hisobot qil.",
-  finance: "Moliyaviy holatni qisqacha hisobot qil.",
-  customer_success: "Mijozlar holatini qisqacha hisobot qil.",
-  hr: "Xodimlar va vazifalar holatini qisqacha hisobot qil.",
-  business_analytics: "KPI, jarayon va CRM monitoring holatini qisqacha hisobot qil.",
-};
-
-const SUB_AGENT_TIMEOUT_MS = 55_000;
-
-type PipelineRunner = (q: string) => Promise<{
-  answer: string;
-  mode: string;
-  structured?: AgentStructuredResult;
-  knowledgeFiles?: string[];
-  crmEntities?: string[];
-  crmSummary?: Record<string, unknown>;
-}>;
-
-const RUNNERS: Partial<Record<RoutableAgentId, PipelineRunner>> = {
-  sales: runSalesAnswer,
-  procurement: runProcurementAnswer,
-  finance: runFinanceAnswer,
-  customer_success: runCustomerSuccessAnswer,
-  hr: runHrAnswer,
-  business_analytics: runBusinessAnalyticsAnswer,
-};
+const BRIEF_TIMEOUT_MS = 25_000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -92,12 +62,11 @@ async function safeDirectorReport(
   agentId: RoutableAgentId,
   originalQuestion: string
 ): Promise<DirectorStructuredReport> {
-  const runner = RUNNERS[agentId];
   const label = AGENT_LABELS[agentId];
   const started = Date.now();
   const startedAt = new Date(started).toISOString();
 
-  if (!runner) {
+  if (agentId === "ceo") {
     return {
       agentId,
       label,
@@ -108,37 +77,30 @@ async function safeDirectorReport(
         risks: [],
         strengths: [],
         recommendations: [],
-        dataLimitations: ["Agent pipeline topilmadi."],
+        dataLimitations: ["CEO o'zini chaqirmaydi"],
         knowledgeUsed: false,
         crmUsed: false,
       },
       mode: "",
       ok: false,
-      error: "pipeline yo'q",
+      error: "ceo self-call blocked",
       startedAt,
       finishedAt: new Date().toISOString(),
-      durationMs: Date.now() - started,
+      durationMs: 0,
     };
   }
 
   devLog(`[CEO Orchestration] START agent=${agentId} at=${startedAt}`);
 
-  const briefQ = `${BRIEF_QUESTIONS[agentId] || "Qisqa hisobot ber."} Kontekst: ${originalQuestion}`;
   try {
-    const r = await withTimeout(runner(briefQ), SUB_AGENT_TIMEOUT_MS, agentId);
+    const brief = await withTimeout(
+      collectDirectorBrief(agentId, originalQuestion),
+      BRIEF_TIMEOUT_MS,
+      agentId
+    );
     const finishedAt = new Date().toISOString();
     const durationMs = Date.now() - started;
-    const structured: AgentStructuredResult = r.structured || {
-      status: r.answer.trim() ? "ok" : "error",
-      summary: r.answer.slice(0, 1200),
-      keyMetrics: {},
-      risks: [],
-      strengths: [],
-      recommendations: [],
-      dataLimitations: [],
-      knowledgeUsed: Boolean(r.knowledgeFiles?.length),
-      crmUsed: Boolean(r.crmEntities?.length),
-    };
+    const structured = brief.structured;
 
     devLog(
       `[CEO Orchestration] END agent=${agentId} durationMs=${durationMs}` +
@@ -150,7 +112,7 @@ async function safeDirectorReport(
       agentId,
       label,
       structured,
-      mode: r.mode,
+      mode: brief.mode,
       ok: structured.status !== "error",
       startedAt,
       finishedAt,
@@ -233,7 +195,6 @@ export async function gatherCeoDirectorReports(
   const batchStarted = Date.now();
   devLog(`\n[CEO Orchestration] BP-09 START agents=${orchestrationAgents.join(",")}`);
 
-  // Parallel: barcha sub-agent bir vaqtda
   const reports = await Promise.all(
     orchestrationAgents.map((id) => safeDirectorReport(id, originalQuestion))
   );

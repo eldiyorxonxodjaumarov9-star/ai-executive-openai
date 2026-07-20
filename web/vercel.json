@@ -4,7 +4,13 @@
   "installCommand": "npm install",
   "functions": {
     "app/api/chat/agent/[agent]/route.ts": {
-      "maxDuration": 60
+      "maxDuration": 120
+    },
+    "app/api/chat/agent/[agent]/stream/route.ts": {
+      "maxDuration": 120
+    },
+    "app/api/chat/auto/route.ts": {
+      "maxDuration": 120
     },
     "app/api/test/openai/route.ts": {
       "maxDuration": 30
@@ -19,9 +25,6 @@
       "maxDuration": 60
     },
     "app/api/debug/executive/route.ts": {
-      "maxDuration": 60
-    },
-    "app/api/chat/agent/[agent]/stream/route.ts": {
       "maxDuration": 60
     }
   }

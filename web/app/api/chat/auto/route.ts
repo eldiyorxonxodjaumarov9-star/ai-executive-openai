@@ -5,7 +5,7 @@ import { AGENT_DISPLAY_NAMES, normalizeAgent } from "@/lib/server/constants";
 import { mapThrownError } from "@/lib/server/user-errors";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
   let body: { question?: string; message?: string; refresh?: boolean };

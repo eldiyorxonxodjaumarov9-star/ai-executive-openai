@@ -4,7 +4,7 @@ import { runQuickAnswer } from "@/lib/server/agents";
 import { mapThrownError } from "@/lib/server/user-errors";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 type RouteContext = { params: Promise<{ agent: string }> };
 
