@@ -42,56 +42,40 @@ function hasDirectProcurementSignal(text: string): boolean {
 
 /**
  * Agent access rules for attaching shared procurement knowledge.
+ * Qoida: har bir chat agent faqat o'z knowledge bazasidan foydalanadi.
+ * Ta'minot (procurement) faqat CEO ta'minot savollarida yoki BA domain ichida.
  */
 export function shouldAttachProcurement(
   primaryAgent: string,
   query: string
 ): { attach: boolean; reason: string } {
   const agent = toKnowledgeDomain(primaryAgent);
-  const text = query.toLowerCase();
-  const direct = hasDirectProcurementSignal(text);
+  const direct = hasDirectProcurementSignal(query);
 
-  if (agent === "procurement") {
-    return { attach: true, reason: "procurement agent — to'liq access" };
-  }
-
-  // Restricted agents: only when question is directly about procurement
+  // Chat agentlar: o'z knowledge faqat — procurement qo'shilmaydi
   if (
     agent === "sales" ||
     agent === "hr" ||
     agent === "marketing" ||
-    agent === "customer-success"
+    agent === "customer-success" ||
+    agent === "finance"
   ) {
-    return direct
-      ? { attach: true, reason: "savol ta'minot bilan bevosita bog'liq" }
-      : { attach: false, reason: "odatiy savol — procurement yuklanmaydi" };
+    return {
+      attach: false,
+      reason: `${agent} — faqat o'z knowledge (procurement yo'q)`,
+    };
   }
 
-  if (agent === "ceo") {
-    if (direct) return { attach: true, reason: "CEO — ta'minot strategik/risk/KPI" };
-    return { attach: false, reason: "CEO savoli ta'minotga tegishli emas" };
+  // CEO va BA endi mustaqil agent pipeline orqali ta'minot tahlilini oladi
+  if (agent === "ceo" || agent === "business-analytics") {
+    return {
+      attach: false,
+      reason: `${agent} — ta'minot uchun sub-agent/procurement pipeline ishlatiladi`,
+    };
   }
 
-  if (agent === "finance") {
-    const financeSupply =
-      /(yetkazib|xarid|taminot|ta'minot).*(to'?lov|budjet|byudjet|qarz|xarajat|hisob)/i.test(text) ||
-      /(to'?lov|budjet|byudjet|qarz|xarajat|hisob).*(yetkazib|xarid|taminot|ta'minot)/i.test(text);
-    if (direct || financeSupply) {
-      return { attach: true, reason: "Finance — xarid/to'lov/yetkazib beruvchi hisob-kitob" };
-    }
-    return { attach: false, reason: "Finance savoli ta'minot moliyasiga tegishli emas" };
-  }
-
-  if (agent === "business-analytics") {
-    const analyticsSupply =
-      /(taminot|ta'minot|yetkazib|xarid).*(kechik|sla|kpi|jarayon|samarador|avtomat|data\s*quality)/i.test(
-        text
-      ) ||
-      /(kechik|sla|kpi|jarayon|samarador).*(taminot|ta'minot|yetkazib)/i.test(text);
-    if (direct || analyticsSupply) {
-      return { attach: true, reason: "BA — jarayon/SLA/kechikish/KPI" };
-    }
-    return { attach: false, reason: "BA savoli ta'minot jarayoniga tegishli emas" };
+  if (agent === "procurement") {
+    return { attach: true, reason: "procurement domain — to'liq access" };
   }
 
   return direct

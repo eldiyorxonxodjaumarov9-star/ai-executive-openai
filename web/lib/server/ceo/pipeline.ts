@@ -9,6 +9,7 @@ import { retrieveCeoChunks } from "./retriever";
 import { planCeoCrmTools } from "./tool-planner";
 import { fetchCeoCrmData } from "./crm-fetcher";
 import { buildCeoContext } from "./context-builder";
+import { gatherCeoDirectorReports, resolveCeoOrchestrationAgents } from "./orchestrator";
 
 export interface CeoAnswerOptions {
   bypassCache?: boolean;
@@ -55,6 +56,40 @@ export async function runCeoAnswer(
   const rewritten = rewriteCeoQuery(q);
   const analysisQuery = rewritten.rewritten;
 
+  // BP-09: sub-agent orchestration (delegatsiya)
+  const orchestrationAgents = resolveCeoOrchestrationAgents(q);
+  if (intentInfo.intent !== "casual_chat" && orchestrationAgents.length > 0) {
+    const orchestration = await gatherCeoDirectorReports(q, orchestrationAgents);
+    const built = buildCeoContext({
+      intent: "knowledge_plus_crm",
+      originalQuestion: q,
+      rewritten,
+      orchestration,
+    });
+
+    const { quickMaxTokens } = getEnv();
+    const raw = await chatCompletion(built.systemPrompt, built.userPrompt, Math.max(quickMaxTokens, 1200));
+    const answer = sanitizeUserOutput(raw);
+
+    return {
+      answer,
+      intent: "hybrid_question",
+      ceoIntent: "knowledge_plus_crm",
+      domainIntent: "ceo_bp09_orchestration",
+      crmSummary: {
+        orchestration: true,
+        agentsConsulted: orchestration.agentsConsulted,
+        orchestrationAgents: orchestration.orchestrationAgents,
+      },
+      brainFiles: [],
+      knowledgeFiles: built.knowledgeFiles,
+      crmEntities: built.crmEntities,
+      mode: "ceo_v1",
+      executionMs: Date.now() - started,
+      rewrittenInternally: rewritten.wasRewritten,
+    };
+  }
+
   let knowledge;
   if (intentInfo.needsKnowledge) {
     knowledge = await retrieveCeoChunks(analysisQuery, { topK: 6 });
@@ -78,7 +113,6 @@ export async function runCeoAnswer(
     }
   }
 
-  // Strict empty CRM message for crm_only
   if (intentInfo.intent === "crm_only" && crmMissing) {
     return {
       answer: sanitizeUserOutput("Bitrix24 da bu savol bo'yicha aniq ma'lumot topilmadi"),
@@ -154,14 +188,38 @@ export async function* runCeoAnswerStream(
 
   yield { type: "status", message: "Savol tahlil qilinmoqda...", phase: "reasoning" };
 
+  const orchestrationAgents = resolveCeoOrchestrationAgents(q);
+  if (intentInfo.intent !== "casual_chat" && orchestrationAgents.length > 0) {
+    yield {
+      type: "status",
+      message: "Direktor agentlaridan hisobotlar yig'ilmoqda...",
+      phase: "bitrix",
+    };
+    const orchestration = await gatherCeoDirectorReports(q, orchestrationAgents);
+    const built = buildCeoContext({
+      intent: "knowledge_plus_crm",
+      originalQuestion: q,
+      rewritten,
+      orchestration,
+    });
+    const { quickMaxTokens } = getEnv();
+    yield { type: "status", message: "Executive Report yozilmoqda...", phase: "generating" };
+    let raw = "";
+    for await (const chunk of chatCompletionStream(
+      built.systemPrompt,
+      built.userPrompt,
+      Math.max(quickMaxTokens, 1200)
+    )) {
+      raw += chunk;
+      yield { type: "delta", text: chunk };
+    }
+    yield { type: "done", answer: sanitizeUserOutput(raw), mode: "ceo_v1" };
+    return;
+  }
+
   let knowledge;
   if (intentInfo.needsKnowledge) {
     knowledge = await retrieveCeoChunks(analysisQuery, { topK: 6 });
-  } else {
-    console.log(`\n[Knowledge] agent=ceo`);
-    console.log(`Retrieval: YO'Q`);
-    console.log(`Sabab: intent knowledge chaqirmadi (${intentInfo.intent})`);
-    console.log(`Chunks:\n0\n`);
   }
 
   let crm;

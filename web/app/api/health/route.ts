@@ -12,11 +12,13 @@ export async function GET() {
     ok: true,
     status: "ok",
     app_name: "AI Executive Platform",
-    environment: process.env.VERCEL_ENV || "development",
-    agents: VALID_AGENTS,
+    environment: process.env.VERCEL_ENV || process.env.NODE_ENV || "development",
+    agents: VALID_AGENTS.filter((a) => a !== "marketing"),
+    agents_all: VALID_AGENTS,
     ai_provider: "openai",
     ai_configured: openaiConfigured,
     openai_configured: openaiConfigured,
     ai_model: env.openaiModel,
+    bitrix_configured: Boolean(env.bitrixWebhookUrl),
   });
 }

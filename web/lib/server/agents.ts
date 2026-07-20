@@ -19,6 +19,11 @@ import {
   runCustomerSuccessAnswerStream,
 } from "./customer-success/pipeline";
 import { runHrAnswer, runHrAnswerStream } from "./hr/pipeline";
+import { runProcurementAnswer, runProcurementAnswerStream } from "./procurement/pipeline";
+import {
+  runBusinessAnalyticsAnswer,
+  runBusinessAnalyticsAnswerStream,
+} from "./business-analytics/pipeline";
 import { runExecutivePipeline } from "./executive-pipeline";
 import { analyzeRouteIntent, type IntentType } from "./intent-router";
 import { loadKnowledgeForIntent } from "./knowledge-router";
@@ -50,7 +55,9 @@ export interface QuickAnswerResult {
     | "finance_v1"
     | "sales_v1"
     | "customer_success_v1"
-    | "hr_v1";
+    | "hr_v1"
+    | "procurement_v1"
+    | "business_analytics_v1";
   executionMs?: number;
 }
 
@@ -222,6 +229,40 @@ export async function runQuickAnswer(
     };
   }
 
+  // Procurement agent
+  if (agent === "procurement") {
+    const proc = await runProcurementAnswer(q, options);
+    return {
+      answer: proc.answer,
+      intent: proc.intent,
+      domainIntent: proc.domainIntent,
+      crmSummary: proc.crmSummary,
+      brainFiles: proc.brainFiles,
+      knowledgeFiles: proc.knowledgeFiles,
+      crmEntities: proc.crmEntities,
+      dataFreshness: proc.dataFreshness,
+      mode: proc.mode,
+      executionMs: proc.executionMs,
+    };
+  }
+
+  // Business Analytics / IT agent
+  if (agent === "business_analytics") {
+    const ba = await runBusinessAnalyticsAnswer(q, options);
+    return {
+      answer: ba.answer,
+      intent: ba.intent,
+      domainIntent: ba.domainIntent,
+      crmSummary: ba.crmSummary,
+      brainFiles: ba.brainFiles,
+      knowledgeFiles: ba.knowledgeFiles,
+      crmEntities: ba.crmEntities,
+      dataFreshness: ba.dataFreshness,
+      mode: ba.mode,
+      executionMs: ba.executionMs,
+    };
+  }
+
   const route = analyzeRouteIntent(q);
   const systemPrompt = buildSystemPrompt(agent, route.type);
 
@@ -364,7 +405,9 @@ export type StreamEvent =
         | "finance_v1"
         | "sales_v1"
         | "customer_success_v1"
-        | "hr_v1";
+        | "hr_v1"
+        | "procurement_v1"
+        | "business_analytics_v1";
     };
 
 export async function* runQuickAnswerStream(
@@ -406,6 +449,20 @@ export async function* runQuickAnswerStream(
 
   if (agent === "hr") {
     for await (const event of runHrAnswerStream(q, options)) {
+      yield event;
+    }
+    return;
+  }
+
+  if (agent === "procurement") {
+    for await (const event of runProcurementAnswerStream(q, options)) {
+      yield event;
+    }
+    return;
+  }
+
+  if (agent === "business_analytics") {
+    for await (const event of runBusinessAnalyticsAnswerStream(q, options)) {
       yield event;
     }
     return;

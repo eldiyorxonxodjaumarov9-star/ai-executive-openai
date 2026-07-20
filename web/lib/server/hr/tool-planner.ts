@@ -1,5 +1,6 @@
 /**
- * Selects only Bitrix24 entity groups needed for the rewritten HR query.
+ * Selects only Bitrix24 entity groups for HR.
+ * Modules: users, departments, tasks, activities.
  */
 
 export type HrCrmTool =
@@ -69,11 +70,6 @@ export function planHrCrmTools(rewrittenQuery: string): HrToolPlan {
     focus.add("activities");
   }
 
-  if (/bitim|savdo|deal|natija/.test(text)) {
-    tools.add("deals");
-    focus.add("employee_deals");
-  }
-
   if (/faol xodim|xodimlar ro'yxati|jamoa/.test(text)) {
     focus.add("active_users");
   }
@@ -96,7 +92,7 @@ export function planHrCrmTools(rewrittenQuery: string): HrToolPlan {
     tools.add("workload");
   }
 
-  if (/tahlil|holat|umumiy|bahola/.test(text)) {
+  if (/tahlil|holat|umumiy|bahola|hisobot/.test(text)) {
     tools.add("departments");
     tools.add("overdue_tasks");
     tools.add("workload");
@@ -106,9 +102,12 @@ export function planHrCrmTools(rewrittenQuery: string): HrToolPlan {
     focus.add("departments");
   }
 
+  // deals — HR doirasida ishlatilmaydi (tashkiliy qoida)
   return {
-    tools: [...tools],
-    focus: [...focus],
-    reason: `HR CRM: ${[...tools].join(", ")} · focus: ${[...focus].join(", ")}`,
+    tools: [...tools].filter((t) => t !== "deals"),
+    focus: [...focus].filter((f) => f !== "employee_deals"),
+    reason: `HR CRM: ${[...tools].filter((t) => t !== "deals").join(", ")} · focus: ${[...focus]
+      .filter((f) => f !== "employee_deals")
+      .join(", ")}`,
   };
 }

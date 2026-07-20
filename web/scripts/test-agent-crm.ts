@@ -34,6 +34,16 @@ const AGENT_TESTS: Record<AgentId, string[]> = {
     "Takroriy mijozlar nechta?",
     "Mijozlarni saqlab qolish bo'yicha tavsiya ber.",
   ],
+  procurement: [
+    "Qaysi yetkazib beruvchi kechikyapti?",
+    "Ta'minotdagi asosiy risklar nima?",
+    "Yetkazib beruvchilarni qanday baholaymiz?",
+  ],
+  business_analytics: [
+    "Qaysi jarayonda bottleneck bor?",
+    "KPI monitoring bo'yicha muammolar nima?",
+    "Dashboard uchun asosiy ko'rsatkichlarni ber.",
+  ],
 };
 
 interface DebugResponse {

@@ -2,6 +2,8 @@ import { chatCompletion, chatCompletionStream } from "../openai";
 import { sanitizeUserOutput } from "../sanitize";
 import { appendFreshnessToAnswer } from "../agent-context";
 import { getEnv } from "../env";
+import { EMPTY_KNOWLEDGE_MSG } from "../user-errors";
+import { devLog } from "../dev-log";
 import type { IntentType } from "../intent-router";
 import { analyzeSalesIntent, type SalesIntent } from "./intent";
 import { rewriteSalesQuery } from "./query-rewriter";
@@ -56,21 +58,29 @@ export async function runSalesAnswer(
   const analysisQuery = rewritten.rewritten;
 
   let knowledge;
-  if (intentInfo.needsKnowledge) {
-    knowledge = await retrieveSalesChunks(analysisQuery, { topK: 6 });
-  } else {
-    console.log(`\n[Knowledge]`);
-    console.log(`Agent: sales`);
-    console.log(`Used chunks.json: YO'Q`);
-    console.log(`Sabab: intent knowledge chaqirmadi (${intentInfo.intent})`);
-    console.log(`Chunks:\n0`);
-    console.log(`Promptga kiritildi:\nYO'Q\n`);
-  }
-
   let crm;
   let crmMissing = false;
   let toolPlan;
-  if (intentInfo.needsCrm) {
+
+  const needK = intentInfo.needsKnowledge;
+  const needC = intentInfo.needsCrm;
+
+  if (needK && needC) {
+    toolPlan = planSalesCrmTools(analysisQuery);
+    const [kResult, cResult] = await Promise.all([
+      retrieveSalesChunks(analysisQuery, { topK: 6 }),
+      fetchSalesCrmData(toolPlan.tools, toolPlan.focus).catch(() => null),
+    ]);
+    knowledge = kResult;
+    if (cResult) {
+      crm = cResult;
+      crmMissing = cResult.empty;
+    } else {
+      crmMissing = true;
+    }
+  } else if (needK) {
+    knowledge = await retrieveSalesChunks(analysisQuery, { topK: 6 });
+  } else if (needC) {
     toolPlan = planSalesCrmTools(analysisQuery);
     try {
       crm = await fetchSalesCrmData(toolPlan.tools, toolPlan.focus);
@@ -78,6 +88,24 @@ export async function runSalesAnswer(
     } catch {
       crmMissing = true;
     }
+  } else {
+    devLog(`\n[Knowledge] Agent: sales — intent knowledge chaqirmadi (${intentInfo.intent})`);
+  }
+
+  if (intentInfo.intent === "knowledge_only" && !knowledge?.hits.length) {
+    return {
+      answer: sanitizeUserOutput(EMPTY_KNOWLEDGE_MSG),
+      intent: mapSalesIntentToLegacy(intentInfo.intent),
+      salesIntent: intentInfo.intent,
+      domainIntent: "sales_knowledge_empty",
+      crmSummary: { knowledgeEmpty: true },
+      brainFiles: [],
+      knowledgeFiles: [],
+      crmEntities: [],
+      mode: "sales_v1",
+      executionMs: Date.now() - started,
+      rewrittenInternally: rewritten.wasRewritten,
+    };
   }
 
   if (intentInfo.intent === "crm_only" && crmMissing) {

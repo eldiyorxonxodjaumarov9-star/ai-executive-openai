@@ -57,30 +57,21 @@ async function main() {
 
   assert(planSalesCrmTools(rw1.rewritten).tools.includes("deals"), "tools: deals");
   assert(planSalesCrmTools(rw2.rewritten).tools.includes("employees"), "tools: employees");
-  assert(planSalesCrmTools("Follow-up qilinmagan mijozlar").tools.includes("tasks"), "tools: tasks");
+  assert(planSalesCrmTools("Follow-up qilinmagan mijozlar").tools.includes("deals"), "tools: deals");
+  assert(!planSalesCrmTools("Follow-up qilinmagan mijozlar").tools.includes("tasks"), "tools: tasks yo'q (BP-01/03)");
 
   const index = await loadSalesKnowledgeIndex(true);
-  assert(index.documents.length >= 5, `5 ta hujjat (${index.documents.length})`);
+  assert(
+    index.documents.length >= 5,
+    `5 ta savdo hujjat (${index.documents.length})`
+  );
   assert(index.chunks.length > 5, `bo'laklar (${index.chunks.length})`);
 
   const hits = await retrieveSalesChunks("savdo jarayoni va konversiya mezonlari", { topK: 5 });
   assert(hits.hits.length > 0, "retrieval ishlaydi");
   assert(hits.diagnostics.usedChunksJson, "chunks.json ishlatildi");
   assert(hits.hits.length <= 5, "to'liq dump emas");
-
-  const emptyCrm = buildSalesContext({
-    intent: "crm_only",
-    originalQuestion: "Bugungi savdo?",
-    rewritten: { original: "Bugungi savdo?", rewritten: "Bugungi savdo?", wasRewritten: false },
-    crmMissing: true,
-  });
-  assert(
-    emptyCrm.userPrompt.includes("Bitrix24 da bu savol bo'yicha aniq ma'lumot topilmadi"),
-    "Bitrix24 bo'sh holat"
-  );
-
-  const crmOnly = analyzeSalesIntent("Bugungi savdo qancha?");
-  assert(crmOnly.intent === "crm_only" || crmOnly.needsCrm, "crm-only savol");
+  assert(Boolean(index.chunks[0]?.meta.fileName && index.chunks[0]?.meta.topic), "metadata");
 
   const hybridEmpty = buildSalesContext({
     intent: "knowledge_plus_crm",
@@ -99,12 +90,35 @@ async function main() {
     "knowledge + CRM yo'q"
   );
 
-  assert(Boolean(index.chunks[0]?.meta.fileName && index.chunks[0]?.meta.topic), "metadata");
+  const emptyKnowledge = buildSalesContext({
+    intent: "knowledge_only",
+    originalQuestion: "Qoida?",
+    rewritten: { original: "Qoida?", rewritten: "Qoida?", wasRewritten: false },
+  });
+  assert(
+    emptyKnowledge.userPrompt.includes("ichki qo'llanma mavjud emas"),
+    "bo'sh knowledge xabari"
+  );
+
+  console.log(`Retrieval files: ${hits.matchedFiles.join(", ")}`);
+  console.log(`Average score: ${hits.averageSimilarity}`);
+
+  const emptyCrm = buildSalesContext({
+    intent: "crm_only",
+    originalQuestion: "Bugungi savdo?",
+    rewritten: { original: "Bugungi savdo?", rewritten: "Bugungi savdo?", wasRewritten: false },
+    crmMissing: true,
+  });
+  assert(
+    emptyCrm.userPrompt.includes("Bitrix24 da bu savol bo'yicha aniq ma'lumot topilmadi"),
+    "Bitrix24 bo'sh holat"
+  );
+
+  const crmOnly = analyzeSalesIntent("Bugungi savdo qancha?");
+  assert(crmOnly.intent === "crm_only" || crmOnly.needsCrm, "crm-only savol");
 
   console.log(`\n${passed} passed, ${failed} failed`);
   console.log(`Indexed docs: ${index.documents.length}, chunks: ${index.chunks.length}`);
-  console.log(`Retrieval files: ${hits.matchedFiles.join(", ")}`);
-  console.log(`Average score: ${hits.averageSimilarity}`);
   process.exit(failed ? 1 : 0);
 }
 

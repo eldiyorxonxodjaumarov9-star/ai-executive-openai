@@ -4,6 +4,8 @@ import type { CeoToolPlan } from "./tool-planner";
 import type { RetrievalResult } from "../knowledge-base/types";
 import { formatCeoKnowledgeContext } from "./retriever";
 import { ceoCrmPromptBlock, type CeoCrmBundle } from "./crm-fetcher";
+import { formatAgentScopeBlock } from "../org/structure";
+import type { CeoOrchestrationBundle } from "./orchestrator";
 
 export interface CeoContextInput {
   intent: CeoIntent;
@@ -13,6 +15,7 @@ export interface CeoContextInput {
   crm?: CeoCrmBundle;
   toolPlan?: CeoToolPlan;
   crmMissing?: boolean;
+  orchestration?: CeoOrchestrationBundle;
 }
 
 export interface CeoBuiltContext {
@@ -22,38 +25,40 @@ export interface CeoBuiltContext {
   crmEntities: string[];
 }
 
-const CEO_SYSTEM = `Siz Xaridlar.uz bosh direktor (CEO) AI maslahatchisisiz.
+const CEO_SYSTEM = `Siz Xaridlar.uz bosh direktor (CEO) AI maslahatchisisiz — BP-09 Korporativ boshqaruv Process Owner.
 
-Rol: kompaniya rahbari sifatida fikrlaysiz — qisqa, aniq, amaliy.
+Rol: kompaniyaning umumiy boshqaruvi, barcha natijalar uchun javobgarlik, strategik tavsiyalar.
 
-Manbalar qat'iy ajratiladi:
-1) KOMPANIYA HUJJATLARI (knowledge) — qoidalar, arxitektura, mezonlar, tajriba.
-2) BITRIX24 (CRM) — faqat jonli raqamlar va faktlar.
+${formatAgentScopeBlock("ceo")}
+
+Bo'limlar nazorati: Savdo, Ta'minot, Moliya, Customer Success, HR, IT.
+
+Manbalar:
+1) CEO HUJJATLARI (knowledge) — HBA korporativ arxitektura.
+2) DIREKTOR HISOBOTLARI — sub-agent pipeline strukturali natijalari.
+3) BITRIX24 — faqat kerakli hollarda (orchestration bo'lmasa).
 
 Qoidalar:
-- Hujjatda yo'q narsani o'ylab topmang.
-- Bitrix24 da yo'q raqamni uydirmang.
-- Knowledge o'rniga CRM yoki CRM o'rniga knowledge ishlatmang.
+- Boshqa agentning knowledge bazasini to'g'ridan-to'g'ri o'qimang — sub-agent hisobotlaridan foydalaning.
+- Raqam o'ylab topmang.
 - Javob faqat o'zbek tilida (lotin).
-- Ichki CRM kodlarini (STAGE_ID, STATUS_ID va h.k.) ko'rsatmang.
-- Valyuta: so'm.
-- Vaqt zonasi: Asia/Tashkent.
-- Har safar katta hisobot yozmang. Savolga mos format tanlang:
-  qisqa javob / tahlil / xavflar / tavsiyalar / keyingi qadamlar.
-- Agar Bitrix24 bo'sh yoki mos ma'lumot yo'q bo'lsa, aniq yozing:
-  "Bitrix24 da bu savol bo'yicha aniq ma'lumot topilmadi"`;
+- Ichki CRM kodlarini ko'rsatmang.
+- Valyuta: so'm. Vaqt zonasi: Asia/Tashkent.`;
 
-function instructionFor(intent: CeoIntent): string {
+function instructionFor(intent: CeoIntent, orchestrated: boolean): string {
+  if (orchestrated) {
+    return `Kompaniya miqyosidagi savol: direktor hisobotlarini birlashtirib Executive Report yozing.
+Format: qisqa xulosa / bo'limlar / risklar / tavsiyalar / keyingi qadamlar.`;
+  }
   switch (intent) {
     case "casual_chat":
-      return "Oddiy suhbat: 2–5 jumla, iliq va professional. CRM/hujjat raqamlariga o'tmang.";
+      return "Oddiy suhbat: 2–5 jumla. O'zingizni bosh direktor (CEO) agenti sifatida tanishtiring.";
     case "knowledge_only":
-      return "Faqat hujjat bo'laklariga tayaning. CRM faktlarini kiritmang.";
+      return "Faqat CEO hujjat bo'laklariga tayaning.";
     case "crm_only":
-      return "Faqat Bitrix24 faktlariga tayaning. Hujjat qoidalarini kiritmang (agar alohida berilmasa).";
+      return "Faqat berilgan Bitrix24 faktlariga tayaning.";
     case "knowledge_plus_crm":
-      return `Avval hujjatdagi baholash mezonlari/qoidalarni qo'llang, keyin Bitrix24 faktlarini shu mezonlar orqali tahlil qiling.
-Ikkalasini birlashtirib rahbar darajasida xulosa bering.`;
+      return "CEO hujjat mezonlari + Bitrix24 faktlarini birlashtiring.";
   }
 }
 
@@ -61,48 +66,59 @@ export function buildCeoContext(input: CeoContextInput): CeoBuiltContext {
   const knowledgeFiles = [
     ...new Set(input.knowledge?.hits.map((h) => h.chunk.meta.fileName) || []),
   ];
-  const crmEntities = input.toolPlan?.tools || [];
+
+  const crmEntities = input.orchestration
+    ? [...(input.orchestration.agentsConsulted || [])]
+    : input.toolPlan?.tools || [];
 
   const systemPrompt = `${CEO_SYSTEM}
 
-${instructionFor(input.intent)}`;
+${instructionFor(input.intent, Boolean(input.orchestration))}`;
 
   const parts: string[] = [];
   parts.push("=== FOYDALANUVCHI SAVOLI ===", input.originalQuestion, "");
-  // Rewritten query is internal analysis guidance — not labeled as user-visible rewrite.
-  if (input.rewritten.wasRewritten) {
-    parts.push("=== ICHKI TAHLIL REJASI (foydalanuvchiga ko'rsatilmasin) ===", input.rewritten.rewritten, "");
-  }
 
-  if (input.intent === "knowledge_only" || input.intent === "knowledge_plus_crm") {
+  if (input.rewritten.wasRewritten) {
     parts.push(
-      "=== KOMPANIYA HUJJATLARI (faqat mos bo'laklar) ===",
-      input.knowledge ? formatCeoKnowledgeContext(input.knowledge) : "Mos bo'lak yo'q.",
+      "=== ICHKI TAHLIL REJASI (foydalanuvchiga ko'rsatilmasin) ===",
+      input.rewritten.rewritten,
       ""
     );
   }
 
-  if (input.intent === "crm_only" || input.intent === "knowledge_plus_crm") {
-    if (input.crmMissing || input.crm?.empty) {
+  if (input.orchestration) {
+    parts.push(input.orchestration.promptBlock, "");
+  } else {
+    if (input.intent === "knowledge_only" || input.intent === "knowledge_plus_crm") {
       parts.push(
-        "=== BITRIX24 ===",
-        "Bitrix24 da bu savol bo'yicha aniq ma'lumot topilmadi",
+        "=== CEO HUJJATLARI (faqat mos bo'laklar) ===",
+        input.knowledge ? formatCeoKnowledgeContext(input.knowledge) : "Mos bo'lak yo'q.",
         ""
       );
-    } else if (input.crm) {
-      parts.push("=== BITRIX24 (jonli ma'lumot) ===", ceoCrmPromptBlock(input.crm), "");
+    }
+
+    if (input.intent === "crm_only" || input.intent === "knowledge_plus_crm") {
+      if (input.crmMissing || input.crm?.empty) {
+        parts.push(
+          "=== BITRIX24 ===",
+          "Bitrix24 da bu savol bo'yicha aniq ma'lumot topilmadi",
+          ""
+        );
+      } else if (input.crm) {
+        parts.push("=== BITRIX24 (jonli ma'lumot) ===", ceoCrmPromptBlock(input.crm), "");
+      }
     }
   }
 
   parts.push(
     "=== JAVOB YO'RIQNOMASI ===",
-    "Rahbar sifatida qisqa va amaliy javob yozing. Keraksiz uzun hisobot tuzmang."
+    "Rahbar sifatida qisqa va amaliy javob yozing."
   );
 
   return {
     systemPrompt,
     userPrompt: parts.join("\n"),
-    knowledgeFiles,
+    knowledgeFiles: [...new Set(knowledgeFiles)],
     crmEntities,
   };
 }

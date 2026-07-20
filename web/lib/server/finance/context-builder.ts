@@ -4,6 +4,7 @@ import type { FinanceToolPlan } from "./tool-planner";
 import type { RetrievalResult } from "../knowledge-base/types";
 import { formatFinanceKnowledgeContext } from "./retriever";
 import { financeCrmPromptBlock, type FinanceCrmBundle } from "./crm-fetcher";
+import { formatAgentScopeBlock } from "../org/structure";
 
 export interface FinanceContextInput {
   intent: FinanceIntent;
@@ -22,24 +23,22 @@ export interface FinanceBuiltContext {
   crmEntities: string[];
 }
 
-const FINANCE_SYSTEM = `Siz Xaridlar.uz moliya (Finance) AI agentisiz.
+const FINANCE_SYSTEM = `Siz Xaridlar.uz Moliya direksiyasi AI agentisiz — BP-06 Moliyaviy hisob-kitob Process Owner.
 
-Rol: moliyaviy nazorat, tushum, qarzdorlik, budjet intizomi va xavflarni qisqa, aniq tahlil qilasiz.
+${formatAgentScopeBlock("finance")}
 
-Manbalar qat'iy ajratiladi:
-1) MOLIYA HUJJATLARI (knowledge) — qoidalar, mezonlar, KPI, hisobot shakllari, tavsiya qoidalari.
-2) BITRIX24 (CRM) — faqat jonli bitimlar, summalar, vazifalar, menejerlar.
+Bo'limlar: Buxgalteriya, Debitor, G'aznachilik, Kreditor.
+
+Manbalar:
+1) MOLIYA HUJJATLARI — faqat AQ-03.
+2) BITRIX24 — faqat deals (revenue / payments / invoice maydonlari).
 
 Qoidalar:
-- Hujjatda yo'q narsani o'ylab topmang.
-- Bitrix24 da yo'q raqamni uydirmang.
-- Knowledge o'rniga CRM yoki CRM o'rniga knowledge ishlatmang.
+- Boshqa direksiya knowledge ishlatmang.
+- Raqam o'ylab topmang.
 - Javob faqat o'zbek tilida (lotin).
-- Valyuta faqat so'm: masalan 250 000 000 so'm. UZS yozmang.
-- Ichki kodlar chiqmasin: STAGE_ID, UC_*, PREPAYMENT_INVOICE, raw JSON.
-- Inglizcha va ruscha sarlavha yozmang.
-- Oddiy savolga 2–8 jumla. Batafsil tahlil faqat so'ralganda.
-- Vaqt zonasi: Asia/Tashkent.`;
+- Valyuta: so'm. Vaqt: Asia/Tashkent.
+- Ichki kodlar chiqmasin.`;
 
 function instructionFor(intent: FinanceIntent): string {
   switch (intent) {

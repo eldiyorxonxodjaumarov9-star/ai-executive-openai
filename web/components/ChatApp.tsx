@@ -330,8 +330,13 @@ export default function ChatApp() {
               onClick={() => selectAgent(a.id)}
               disabled={loading}
             >
-              <span className={`${styles.agentDot} ${styles[`agentDot_${a.id}`]}`} />
-              <span className={styles.agentItemLabel}>{a.label}</span>
+              <span className={styles.agentDot} style={{ background: a.color }} />
+              <span className={styles.agentItemText}>
+                <span className={styles.agentItemLabel}>{a.label}</span>
+                {"description" in a && a.description ? (
+                  <span className={styles.agentItemDesc}>{a.description}</span>
+                ) : null}
+              </span>
             </button>
           ))}
         </nav>

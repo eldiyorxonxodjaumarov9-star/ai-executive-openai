@@ -1,5 +1,6 @@
 /**
- * Selects only Bitrix24 entity groups needed for the rewritten finance query.
+ * Selects only Bitrix24 entity groups for Finance (BP-06).
+ * Modules: deals (revenue / payments / invoice fields).
  */
 
 export type FinanceCrmTool = "deals" | "tasks" | "employees";
@@ -21,30 +22,21 @@ export interface FinanceToolPlan {
 
 export function planFinanceCrmTools(rewrittenQuery: string): FinanceToolPlan {
   const text = rewrittenQuery.toLowerCase();
+  // BP-06: faqat deals asosidagi moliyaviy faktlar
   const tools = new Set<FinanceCrmTool>(["deals"]);
   const focus = new Set<FinanceToolPlan["focus"][number]>();
 
-  if (/yopilgan|tushum|savdo|sotuv|oy|bugun|hafta/.test(text)) {
+  if (/yopilgan|tushum|savdo|sotuv|oy|bugun|hafta|daromad/.test(text)) {
     focus.add("closed_sales");
     focus.add("period_revenue");
     focus.add("amounts");
   }
-  if (/summa|amount|qiymat/.test(text)) focus.add("amounts");
+  if (/summa|amount|qiymat|to'?lov|invoice|hisob/.test(text)) focus.add("amounts");
   if (/0|nol|kiritilmagan|aniqlanmagan/.test(text)) focus.add("zero_amount_deals");
   if (/katta|yirik|eng katta/.test(text)) focus.add("large_deals");
-  if (/menejer|xodim|kesim/.test(text)) {
-    focus.add("manager_sales");
-    tools.add("employees");
-  }
-  if (/qarz|debitor|to'lov|kechik/.test(text)) {
+  if (/debitor|qarz/.test(text)) {
     focus.add("debt_tasks");
-    focus.add("overdue_tasks");
-    tools.add("tasks");
-    tools.add("employees");
-  }
-  if (/vazifa|task/.test(text)) {
-    tools.add("tasks");
-    focus.add("overdue_tasks");
+    focus.add("amounts");
   }
 
   if (focus.size === 0) {
@@ -54,15 +46,9 @@ export function planFinanceCrmTools(rewrittenQuery: string): FinanceToolPlan {
     focus.add("period_revenue");
   }
 
-  // Manager breakdown often useful for finance executive questions
-  if (/tahlil|xavf|holat|umumiy/.test(text)) {
-    tools.add("employees");
-    focus.add("manager_sales");
-  }
-
   return {
     tools: [...tools],
     focus: [...focus],
-    reason: `Finance CRM: ${[...tools].join(", ")} · focus: ${[...focus].join(", ")}`,
+    reason: `Finance CRM (BP-06): ${[...tools].join(", ")} · focus: ${[...focus].join(", ")}`,
   };
 }

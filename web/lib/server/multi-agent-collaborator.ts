@@ -11,10 +11,12 @@ function questionNeedsAgent(question: string, agent: AgentId): boolean {
   const signals: Record<AgentId, RegExp> = {
     ceo: /^$/,
     sales: /\b(savdo|sotuv|voronka|menejer|bitim)\b/,
+    procurement: /\b(ta'?minot|yetkazib|xarid|supplier)\b/,
     finance: /\b(moliya|summa|tushum|revenue|forecast)\b/,
     hr: /\b(xodim|yuklama|ishchi|hr)\b/,
     marketing: /\b(marketing|lid|source|konversiya|manba)\b/,
     customer_success: /\b(mijoz|kontakt|retention|customer)\b/,
+    business_analytics: /\b(kpi|dashboard|analitika|monitoring|bottleneck)\b/,
   };
   if (agent === "ceo") return false;
   return signals[agent].test(t);

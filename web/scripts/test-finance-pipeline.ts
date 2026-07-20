@@ -60,7 +60,8 @@ async function main() {
   assert(plan.tools.includes("deals"), "tool plan: deals");
 
   const debtPlan = planFinanceCrmTools(rw2.rewritten);
-  assert(debtPlan.tools.includes("tasks"), "tool plan: tasks for debt");
+  assert(debtPlan.tools.includes("deals"), "tool plan: deals for debt");
+  assert(!debtPlan.tools.includes("tasks"), "tool plan: tasks yo'q (BP-06)");
 
   const index = await loadFinanceKnowledgeIndex(true);
   assert(index.documents.length >= 5, `5 ta hujjat (${index.documents.length})`);

@@ -7,6 +7,7 @@ import {
   customerSuccessCrmPromptBlock,
   type CustomerSuccessCrmBundle,
 } from "./crm-fetcher";
+import { formatAgentScopeBlock } from "../org/structure";
 
 export interface CustomerSuccessContextInput {
   intent: CustomerSuccessIntent;
@@ -26,25 +27,21 @@ export interface CustomerSuccessBuiltContext {
   knowledgeInPrompt: boolean;
 }
 
-const CS_SYSTEM = `Siz Xaridlar.uz Customer Success (Mijozlar) AI agentisiz.
+const CS_SYSTEM = `Siz Xaridlar.uz Customer Success AI agentisiz — BP-04 va BP-07 Process Owner.
 
-Rol: mijozlarni ushlab qolish, qoniqish, health score, onboarding, renewal, upsell, churn xavfi va mijoz bilan ishlash sifatini tahlil qilasiz.
+${formatAgentScopeBlock("customer_success")}
 
-Manbalar qat'iy ajratiladi:
-1) CUSTOMER SUCCESS HUJJATLARI (knowledge) — standartlar, KPI, retention, NPS, SLA, tavsiyalar.
-2) BITRIX24 (CRM) — faqat jonli kontaktlar, kompaniyalar, bitimlar, activities, vazifalar.
+Bo'limlar: Account Manager, Service, Broker nazorati, Mijoz tajribasi.
+
+Manbalar:
+1) CUSTOMER SUCCESS HUJJATLARI — faqat AQ-04.
+2) BITRIX24 — contacts, companies, activities, deals.
 
 Qoidalar:
-- Hujjatda yo'q narsani o'ylab topmang.
-- Bitrix24 da yo'q raqamni uydirmang.
-- Knowledge o'rniga CRM yoki CRM o'rniga knowledge ishlatmang.
-- Javob faqat o'zbek tilida (lotin).
-- Valyuta: so'm.
-- Ichki kodlar chiqmasin: STAGE_ID, CATEGORY_ID, SOURCE_ID, UF_*, raw JSON.
-- Telefon/emailni to'liq ko'rsatmang.
-- Oddiy savolga 2–8 jumla. Katta hisobot faqat so'ralganda.
-- Format: qisqa xulosa / mijozlar holati / risklar / kuchli tomonlar / tavsiyalar / keyingi qadamlar — savolga mos.
-- Vaqt zonasi: Asia/Tashkent.`;
+- Savdo/HR/Moliya knowledge ishlatmang.
+- Raqam o'ylab topmang.
+- Javob faqat o'zbek tilida. Valyuta: so'm. Vaqt: Asia/Tashkent.
+- Ichki kodlar chiqmasin.`;
 
 function instructionFor(intent: CustomerSuccessIntent): string {
   switch (intent) {

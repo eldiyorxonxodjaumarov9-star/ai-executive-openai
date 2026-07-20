@@ -1,5 +1,6 @@
 /**
- * Selects only Bitrix24 entity groups needed for the rewritten CS query.
+ * Selects only Bitrix24 entity groups for Customer Success (BP-04, BP-07).
+ * Modules: contacts, companies, activities, deals.
  */
 
 export type CustomerSuccessCrmTool =
@@ -34,14 +35,10 @@ export function planCustomerSuccessCrmTools(rewrittenQuery: string): CustomerSuc
   const focus = new Set<CustomerSuccessToolPlan["focus"][number]>();
 
   if (/kompaniya|yirik|takroriy/.test(text)) tools.add("companies");
-  if (/activity|aktivit|qo'ng'iroq|email|timeline|oxirgi/.test(text)) {
+  if (/activity|aktivit|qo'ng'iroq|email|timeline|oxirgi|broker|servis/.test(text)) {
     tools.add("activities");
     focus.add("last_activities");
     focus.add("calls_emails");
-  }
-  if (/vazifa|task|kechik|follow|aloqa/.test(text)) {
-    tools.add("tasks");
-    focus.add("overdue_tasks");
   }
   if (/faol/.test(text)) focus.add("active_customers");
   if (/faol bo'lmagan|inactive|aloqasiz|uzoq/.test(text)) {
@@ -63,22 +60,18 @@ export function planCustomerSuccessCrmTools(rewrittenQuery: string): CustomerSuc
     focus.add("last_activities");
     focus.add("risk_customers");
     tools.add("activities");
-    tools.add("tasks");
     tools.add("companies");
   }
 
-  if (/tahlil|xavf|holat|umumiy|bahola|standart/.test(text)) {
+  if (/tahlil|xavf|holat|umumiy|bahola|standart|hisobot/.test(text)) {
     tools.add("activities");
-    tools.add("tasks");
     tools.add("companies");
-    tools.add("employees");
     focus.add("risk_customers");
-    focus.add("overdue_tasks");
   }
 
   return {
     tools: [...tools],
     focus: [...focus],
-    reason: `CS CRM: ${[...tools].join(", ")} · focus: ${[...focus].join(", ")}`,
+    reason: `CS CRM (BP-04/BP-07): ${[...tools].join(", ")} · focus: ${[...focus].join(", ")}`,
   };
 }

@@ -3,6 +3,7 @@ import type { RewrittenQuery } from "./types";
 import type { HrToolPlan } from "./tool-planner";
 import { formatHrKnowledgeContext, type HrRetrievalResult } from "./retriever";
 import { hrCrmPromptBlock, type HrCrmBundle } from "./crm-fetcher";
+import { formatAgentScopeBlock } from "../org/structure";
 
 export interface HrContextInput {
   intent: HrIntent;
@@ -22,15 +23,18 @@ export interface HrBuiltContext {
   knowledgeInPrompt: boolean;
 }
 
-const HR_SYSTEM = `Siz Xaridlar.uz HR (Kadrlar / Xodimlar) AI agentisiz.
+const HR_SYSTEM = `Siz Xaridlar.uz HR va administrativ boshqaruv AI agentisiz.
 
-Rol: xodimlar, vazifalar, ish yuklamasi, onboarding, KPI, motivatsiya va jamoa holatini tahlil qilasiz.
+${formatAgentScopeBlock("hr")}
 
-Manbalar qat'iy ajratiladi:
-1) HR HUJJATLARI (knowledge) — siyosat, onboarding, KPI, motivatsiya, turnover, executive hisobot mezonlari.
-2) BITRIX24 (CRM) — faqat kuzatiladigan faktlar: xodimlar, vazifalar, kechikishlar, yuklama, activities.
+Bo'limlar: HR, O'qitish, Ma'muriy xo'jalik, Huquq.
+
+Manbalar:
+1) HR HUJJATLARI — faqat AQ-HR.
+2) BITRIX24 — users, departments, tasks, activities.
 
 Qoidalar:
+- Moliya/Savdo/CS knowledge ishlatmang.
 - Xodimni dalilsiz yomon deb baholamang.
 - Tibbiy, oilaviy yoki shaxsiy sabablarni taxmin qilmang.
 - "Ishdan bo'shatish kerak" degan keskin hukmni avtomatik bermang.

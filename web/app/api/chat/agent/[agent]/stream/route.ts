@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { normalizeAgent } from "@/lib/server/constants";
 import { runQuickAnswerStream } from "@/lib/server/agents";
-import { OpenAIError } from "@/lib/server/openai";
+import { mapThrownError } from "@/lib/server/user-errors";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -53,13 +53,10 @@ export async function POST(req: NextRequest, context: RouteContext) {
           }
           controller.enqueue(enc.encode("data: [DONE]\n\n"));
         } catch (e) {
-          const msg =
-            e instanceof OpenAIError
-              ? e.message
-              : e instanceof Error
-                ? e.message
-                : "Stream xatosi";
-          controller.enqueue(enc.encode(sse({ type: "error", message: msg })));
+          const mapped = mapThrownError(e);
+          controller.enqueue(
+            enc.encode(sse({ type: "error", code: mapped.code, message: mapped.message }))
+          );
         } finally {
           controller.close();
         }
@@ -74,9 +71,9 @@ export async function POST(req: NextRequest, context: RouteContext) {
       },
     });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Stream boshlanmadi";
-    return new Response(sse({ type: "error", message: msg }), {
-      status: 500,
+    const mapped = mapThrownError(e);
+    return new Response(sse({ type: "error", code: mapped.code, message: mapped.message }), {
+      status: mapped.httpStatus,
       headers: { "Content-Type": "text/event-stream" },
     });
   }

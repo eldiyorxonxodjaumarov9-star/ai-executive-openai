@@ -53,6 +53,8 @@ const stageCache: { map: Map<string, DealStageInfo>; expiresAt: number } = {
 const STAGE_CACHE_TTL_MS = 5 * 60 * 1000;
 
 function safeLog(level: "error" | "warn" | "info", message: string, detail?: Record<string, unknown>) {
+  // Production: faqat error/warn; URL/token hech qachon logga chiqmasin
+  if (level === "info" && process.env.NODE_ENV === "production") return;
   const payload = detail ? ` ${JSON.stringify(detail)}` : "";
   if (level === "error") console.error(`[Bitrix24] ${message}${payload}`);
   else if (level === "warn") console.warn(`[Bitrix24] ${message}${payload}`);
@@ -100,12 +102,33 @@ export async function bitrixCallRaw(method: string, params: CrmRecord = {}): Pro
       signal: AbortSignal.timeout(55000),
     });
   } catch (e) {
-    safeLog("error", "Ulanish xatosi", { method, error: e instanceof Error ? e.message : "network" });
-    throw new BitrixError("CRM ulanish xatosi — Bitrix24 dan javob kelmadi.", undefined, "webhook_error");
+    const errMsg = e instanceof Error ? e.message : "network";
+    const isTimeout = /timeout|aborted|AbortError/i.test(errMsg);
+    safeLog("error", isTimeout ? "Timeout" : "Ulanish xatosi", { method, error: errMsg });
+    throw new BitrixError(
+      isTimeout
+        ? "Bitrix24 javobi vaqti tugadi — qayta urinib ko'ring."
+        : "CRM ulanish xatosi — Bitrix24 dan javob kelmadi.",
+      undefined,
+      isTimeout ? "timeout" : "webhook_error"
+    );
   }
 
   if (response.status >= 400) {
     safeLog("error", "HTTP xato", { method, status: response.status });
+    if (response.status === 401) {
+      throw new BitrixError("Bitrix24 webhook noto'g'ri yoki muddati o'tgan.", 401, "unauthorized");
+    }
+    if (response.status === 403) {
+      throw new BitrixError(
+        `Bitrix24 ruxsati yetarli emas (HTTP 403, method=${method}). Webhook permission tekshiring.`,
+        403,
+        "permission_denied"
+      );
+    }
+    if (response.status >= 500) {
+      throw new BitrixError(`Bitrix24 server xatosi (HTTP ${response.status}).`, response.status, "server_error");
+    }
     throw new BitrixError(`Bitrix24 HTTP ${response.status}`, response.status, "webhook_error");
   }
 
@@ -604,27 +627,92 @@ export async function checkBitrixHealth(): Promise<{
   deals_readable: boolean;
   sample_count: number;
   error: string | null;
+  entities?: Record<
+    string,
+    { ok: boolean; count?: number; error?: string; permission?: string }
+  >;
 }> {
+  const entities: Record<
+    string,
+    { ok: boolean; count?: number; error?: string; permission?: string }
+  > = {};
+
+  async function probe(
+    key: string,
+    method: string,
+    params: CrmRecord = {}
+  ): Promise<void> {
+    try {
+      const data = await bitrixCallRaw(method, params);
+      const result = data.result;
+      let count = 0;
+      if (Array.isArray(result)) count = result.length;
+      else if (result && typeof result === "object") {
+        const nested = (result as { tasks?: unknown[]; result?: unknown[] }).tasks
+          || (result as { result?: unknown[] }).result;
+        count = Array.isArray(nested) ? nested.length : Array.isArray(result) ? (result as unknown[]).length : 1;
+      }
+      entities[key] = { ok: true, count };
+    } catch (e) {
+      const status = e instanceof BitrixError ? e.statusCode : undefined;
+      const msg = e instanceof BitrixError ? e.message : "xato";
+      entities[key] = {
+        ok: false,
+        error: msg,
+        permission:
+          status === 403
+            ? `403 permission_denied — ${method}`
+            : status === 401
+              ? `401 unauthorized — ${method}`
+              : undefined,
+      };
+      safeLog("warn", `Health probe failed: ${key}`, {
+        method,
+        status,
+        error: msg,
+      });
+    }
+  }
+
   try {
     await bitrixCall("profile");
-    const data = await bitrixCallRaw("crm.deal.list", { select: ["ID", "TITLE"], start: 0 });
-    const items = Array.isArray(data.result) ? data.result : [];
-    return {
-      connected: true,
-      deals_readable: true,
-      sample_count: items.length,
-      error: null,
-    };
   } catch (e) {
     const msg = e instanceof BitrixError ? e.message : "Bitrix24 ulanishi muvaffaqiyatsiz";
-    safeLog("error", "Health check xato", { error: msg });
+    const status = e instanceof BitrixError ? e.statusCode : undefined;
+    safeLog("error", "Health check xato", { error: msg, status });
     return {
       connected: false,
       deals_readable: false,
       sample_count: 0,
-      error: msg,
+      error:
+        status === 403
+          ? `Bitrix24 HTTP 403 — webhook permission yetarli emas yoki URL noto'g'ri.`
+          : status === 401
+            ? `Bitrix24 HTTP 401 — webhook token noto'g'ri.`
+            : msg,
+      entities,
     };
   }
+
+  await Promise.all([
+    probe("users", "user.get", { filter: { ACTIVE: true }, start: 0 }),
+    probe("departments", "department.get", { start: 0 }),
+    probe("leads", "crm.lead.list", { select: ["ID"], start: 0 }),
+    probe("deals", "crm.deal.list", { select: ["ID", "TITLE"], start: 0 }),
+    probe("contacts", "crm.contact.list", { select: ["ID"], start: 0 }),
+    probe("companies", "crm.company.list", { select: ["ID"], start: 0 }),
+    probe("activities", "crm.activity.list", { select: ["ID"], start: 0 }),
+    probe("tasks", "tasks.task.list", { select: ["ID"], start: 0 }),
+  ]);
+
+  const dealsOk = entities.deals?.ok === true;
+  return {
+    connected: true,
+    deals_readable: dealsOk,
+    sample_count: entities.deals?.count ?? 0,
+    error: null,
+    entities,
+  };
 }
 
 export interface CrmPayload {

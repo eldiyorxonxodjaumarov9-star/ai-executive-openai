@@ -20,7 +20,13 @@
     "test:sales": "tsx scripts/test-sales-pipeline.ts",
     "test:customer-success": "tsx scripts/test-customer-success-pipeline.ts",
     "test:cross-domain": "tsx scripts/test-cross-domain-procurement.ts",
+    "test:org": "tsx scripts/test-org-structure.ts",
     "test:hr": "tsx scripts/test-hr-agent.ts",
+    "test:procurement": "tsx scripts/test-procurement-agent.ts",
+    "test:business-analytics": "tsx scripts/test-business-analytics-agent.ts",
+    "test:router": "tsx scripts/test-org-routing.ts",
+    "test:ceo:orchestration": "tsx scripts/test-ceo-orchestration.ts",
+    "test:production-release": "tsx scripts/test-production-release.ts",
     "audit:knowledge": "tsx scripts/audit-knowledge-retrieval.ts",
     "test:v2": "tsx scripts/test-v2-architecture.ts",
     "test:agents": "tsx scripts/test-agent-crm.ts"

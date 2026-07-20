@@ -118,6 +118,26 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-weight: 500;
+}
+
+.agentItemText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  text-align: left;
+}
+
+.agentItemDesc {
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--muted);
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .sidebarFooter {
@@ -375,6 +395,18 @@
 .welcomeIcon_customer_success,
 .messageAvatar_customer_success {
   background: #0ea5e9;
+}
+
+.agentDot_procurement,
+.welcomeIcon_procurement,
+.messageAvatar_procurement {
+  background: #d97706;
+}
+
+.agentDot_business_analytics,
+.welcomeIcon_business_analytics,
+.messageAvatar_business_analytics {
+  background: #6366f1;
 }
 
 .messageAvatarUser {

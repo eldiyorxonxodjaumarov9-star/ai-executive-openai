@@ -1,21 +1,25 @@
 export const VALID_AGENTS = [
   "ceo",
   "sales",
+  "procurement",
   "finance",
   "marketing",
   "customer_success",
   "hr",
+  "business_analytics",
 ] as const;
 
 export type AgentId = (typeof VALID_AGENTS)[number];
 
 export const AGENT_DISPLAY_NAMES: Record<AgentId, string> = {
   ceo: "Rahbar agenti",
-  sales: "Sotuv agenti",
+  sales: "Savdo agenti",
+  procurement: "Ta'minot agenti",
   finance: "Moliya agenti",
   marketing: "Targ'ibot agenti",
   customer_success: "Mijozlar agenti",
   hr: "Xodimlar agenti",
+  business_analytics: "IT va biznes analitika",
 };
 
 export function normalizeAgent(name: string): AgentId {

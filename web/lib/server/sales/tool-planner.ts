@@ -1,5 +1,6 @@
 /**
- * Selects only Bitrix24 entity groups needed for the rewritten sales query.
+ * Selects only Bitrix24 entity groups for Sales (BP-01, BP-03).
+ * Modules: leads, deals, managers (employees), revenue.
  */
 
 export type SalesCrmTool = "deals" | "leads" | "tasks" | "employees";
@@ -39,19 +40,13 @@ export function planSalesCrmTools(rewrittenQuery: string): SalesToolPlan {
     focus.add("amounts");
   }
   if (/yutqazilgan|yo'qotilgan|lose|lost|nega/.test(text)) focus.add("closed_lost");
-  if (/bosqich|stage|pipeline/.test(text)) focus.add("stages");
-  if (/menejer|solishtir|kesim/.test(text)) {
+  if (/bosqich|stage|pipeline|taklif|offer/.test(text)) focus.add("stages");
+  if (/menejer|solishtir|kesim|manager/.test(text)) {
     focus.add("manager_sales");
     tools.add("employees");
   }
   if (/konversiya/.test(text)) focus.add("conversion");
   if (/turib qolgan|uzoq|stalled/.test(text)) focus.add("stalled_deals");
-  if (/vazifa|kechik|follow/.test(text)) {
-    focus.add("overdue_tasks");
-    focus.add("followup_gaps");
-    tools.add("tasks");
-    tools.add("employees");
-  }
   if (/manba|source/.test(text)) focus.add("sources");
   if (/katta|yirik/.test(text)) focus.add("large_deals");
   if (/0|nol|kiritilmagan/.test(text)) focus.add("zero_amount_deals");
@@ -65,16 +60,14 @@ export function planSalesCrmTools(rewrittenQuery: string): SalesToolPlan {
     focus.add("period_sales");
   }
 
-  if (/tahlil|xavf|holat|umumiy|bahola/.test(text)) {
+  if (/tahlil|xavf|holat|umumiy|bahola|hisobot/.test(text)) {
     tools.add("employees");
-    tools.add("tasks");
     focus.add("manager_sales");
-    focus.add("overdue_tasks");
   }
 
   return {
     tools: [...tools],
     focus: [...focus],
-    reason: `Sales CRM: ${[...tools].join(", ")} · focus: ${[...focus].join(", ")}`,
+    reason: `Sales CRM (BP-01/BP-03): ${[...tools].join(", ")} · focus: ${[...focus].join(", ")}`,
   };
 }
