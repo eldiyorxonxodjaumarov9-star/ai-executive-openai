@@ -1,18 +1,18 @@
 import { formatRetrievalForPrompt, retrieveFromIndexAudited } from "../knowledge-base/retriever";
 import type { AuditedRetrievalResult } from "../knowledge-base/retrieval-log";
 import { emptyAuditedResult, logKnowledgeRetrieval } from "../knowledge-base/retrieval-log";
-import { getCeoIndexPath, loadCeoKnowledgeIndex, peekCeoIndexStatus } from "./knowledge-loader";
+import { getSalesIndexPath, loadSalesKnowledgeIndex, peekSalesIndexStatus } from "./knowledge-loader";
 
-export async function retrieveCeoChunks(
+export async function retrieveSalesChunks(
   query: string,
   options: { topK?: number; forceRebuild?: boolean; log?: boolean } = {}
 ): Promise<AuditedRetrievalResult> {
-  const indexPath = getCeoIndexPath();
-  const status = peekCeoIndexStatus();
+  const indexPath = getSalesIndexPath();
+  const status = peekSalesIndexStatus();
 
   if (!options.forceRebuild && !status.ok) {
     const result = emptyAuditedResult(query, {
-      agentId: "ceo",
+      agentId: "sales",
       indexPath,
       usedChunksJson: false,
       indexLoaded: false,
@@ -20,16 +20,15 @@ export async function retrieveCeoChunks(
       query,
       minScore: 0.2,
       failureReason: status.reason,
-      failureDetail: `CEO indeks: ${status.path}`,
+      failureDetail: `Sales indeks: ${status.path}`,
     });
     if (options.log !== false) logKnowledgeRetrieval(result);
-    // Attempt rebuild if missing
     try {
-      const index = await loadCeoKnowledgeIndex(true);
+      const index = await loadSalesKnowledgeIndex(true);
       return retrieveFromIndexAudited(index, query, {
         topK: options.topK ?? 6,
         minScore: 0.2,
-        agentId: "ceo",
+        agentId: "sales",
         indexPath,
         log: options.log !== false,
       });
@@ -39,22 +38,27 @@ export async function retrieveCeoChunks(
     }
   }
 
-  const index = await loadCeoKnowledgeIndex(options.forceRebuild);
+  const index = await loadSalesKnowledgeIndex(options.forceRebuild);
   return retrieveFromIndexAudited(index, query, {
     topK: options.topK ?? 6,
     minScore: 0.2,
-    agentId: "ceo",
+    agentId: "sales",
     indexPath,
     log: options.log !== false,
   });
 }
 
-export function formatCeoKnowledgeContext(result: AuditedRetrievalResult | { hits: AuditedRetrievalResult["hits"]; query?: string; usedChunkIds?: string[] }): string {
+export function formatSalesKnowledgeContext(
+  result: AuditedRetrievalResult | { hits: AuditedRetrievalResult["hits"]; query?: string; usedChunkIds?: string[] }
+): string {
   return formatRetrievalForPrompt(
     {
       hits: result.hits,
       query: "query" in result && result.query ? result.query : "",
-      usedChunkIds: "usedChunkIds" in result && result.usedChunkIds ? result.usedChunkIds : result.hits.map((h) => h.chunk.id),
+      usedChunkIds:
+        "usedChunkIds" in result && result.usedChunkIds
+          ? result.usedChunkIds
+          : result.hits.map((h) => h.chunk.id),
     },
     4500
   );

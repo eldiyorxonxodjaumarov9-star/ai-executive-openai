@@ -1,4 +1,4 @@
-import { ensureKnowledgeIndex, loadKnowledgeIndex, buildKnowledgeIndex } from "../knowledge-base/indexer";
+import { ensureKnowledgeIndex, loadKnowledgeIndexWithStatus, indexPathFor, buildKnowledgeIndex } from "../knowledge-base/indexer";
 import { listKnowledgeSourceFiles } from "../knowledge-base/extract";
 import type { KnowledgeIndex } from "../knowledge-base/types";
 import { getFinanceKnowledgeDir } from "../paths";
@@ -10,6 +10,10 @@ export async function loadFinanceKnowledgeIndex(forceRebuild = false): Promise<K
   return ensureKnowledgeIndex({ agentId: AGENT_ID, sourceDir, forceRebuild });
 }
 
+export function peekFinanceIndexStatus() {
+  return loadKnowledgeIndexWithStatus(getFinanceKnowledgeDir());
+}
+
 export function getFinanceSourceFiles(): string[] {
   return listKnowledgeSourceFiles(getFinanceKnowledgeDir());
 }
@@ -19,7 +23,12 @@ export async function rebuildFinanceKnowledgeIndex(): Promise<KnowledgeIndex> {
 }
 
 export function peekFinanceKnowledgeIndex(): KnowledgeIndex | null {
-  return loadKnowledgeIndex(getFinanceKnowledgeDir());
+  const status = loadKnowledgeIndexWithStatus(getFinanceKnowledgeDir());
+  return status.ok ? status.index : null;
+}
+
+export function getFinanceIndexPath(): string {
+  return indexPathFor(getFinanceKnowledgeDir());
 }
 
 export { getFinanceKnowledgeDir };

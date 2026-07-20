@@ -48,6 +48,10 @@ const KNOWLEDGE = [
   "ta'rif",
   "tamoyil",
   "politika",
+  "tashkil",
+  "tashkilot",
+  "rahbariyat",
+  "direksiya",
 ];
 
 const CRM = [
@@ -63,7 +67,6 @@ const CRM = [
   "task",
   "xodim",
   "kontakt",
-  "kompaniya",
   "bugun",
   "kecha",
   "hafta",
@@ -107,16 +110,19 @@ export function analyzeCeoIntent(question: string): CeoIntentResult {
     };
   }
 
-  const needsKnowledge = knowledgeHits.length > 0;
-  const needsCrm = crmHits.length > 0;
+  // Organizational / architecture questions are knowledge-first.
+  const orgKnowledge =
+    /boshqaruv|tashkil et|tashkil qilin|arxitektura|qatlam|hba-?\d*|rahbariyat|direksiya/.test(text);
 
-  // Vague performance questions imply CRM; architecture/rules imply knowledge.
   const vagueBusiness = /qanday|holat|vaziyat|tahlil|xavf|tavsiya/.test(text);
   const impliedCrm =
-    needsCrm ||
-    (/sotuv|savdo|bitim|mijoz|xodim|vazifa|pipeline/.test(text) && !/arxitektura|qatlam|hba|qoida|reglament/.test(text));
+    !orgKnowledge &&
+    (crmHits.length > 0 ||
+      (/sotuv|savdo|bitim|mijoz|xodim|vazifa|pipeline/.test(text) &&
+        !/arxitektura|qatlam|hba|reglament/.test(text)));
   const impliedKnowledge =
-    needsKnowledge ||
+    orgKnowledge ||
+    knowledgeHits.length > 0 ||
     /arxitektura|qatlam|qoida|mezon|baholash|jarayon|standart|broker|taminot|hujjat/.test(text);
 
   let intent: CeoIntent;

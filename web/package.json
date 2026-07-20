@@ -4,14 +4,17 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "tsx scripts/index-ceo-knowledge.ts && tsx scripts/index-finance-knowledge.ts && next build",
+    "build": "tsx scripts/index-ceo-knowledge.ts && tsx scripts/index-finance-knowledge.ts && tsx scripts/index-sales-knowledge.ts && next build",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "index:ceo": "tsx scripts/index-ceo-knowledge.ts",
     "index:finance": "tsx scripts/index-finance-knowledge.ts",
+    "index:sales": "tsx scripts/index-sales-knowledge.ts",
     "test:ceo": "tsx scripts/test-ceo-pipeline.ts",
     "test:finance": "tsx scripts/test-finance-pipeline.ts",
+    "test:sales": "tsx scripts/test-sales-pipeline.ts",
+    "audit:knowledge": "tsx scripts/audit-knowledge-retrieval.ts",
     "test:v2": "tsx scripts/test-v2-architecture.ts",
     "test:agents": "tsx scripts/test-agent-crm.ts"
   },

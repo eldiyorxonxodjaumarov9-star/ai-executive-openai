@@ -3,34 +3,34 @@ import { sanitizeUserOutput } from "../sanitize";
 import { appendFreshnessToAnswer } from "../agent-context";
 import { getEnv } from "../env";
 import type { IntentType } from "../intent-router";
-import { analyzeFinanceIntent, type FinanceIntent } from "./intent";
-import { rewriteFinanceQuery } from "./query-rewriter";
-import { retrieveFinanceChunks } from "./retriever";
-import { planFinanceCrmTools } from "./tool-planner";
-import { fetchFinanceCrmData } from "./crm-fetcher";
-import { buildFinanceContext } from "./context-builder";
+import { analyzeSalesIntent, type SalesIntent } from "./intent";
+import { rewriteSalesQuery } from "./query-rewriter";
+import { retrieveSalesChunks } from "./retriever";
+import { planSalesCrmTools } from "./tool-planner";
+import { fetchSalesCrmData } from "./crm-fetcher";
+import { buildSalesContext } from "./context-builder";
 
-export interface FinanceAnswerOptions {
+export interface SalesAnswerOptions {
   bypassCache?: boolean;
   conversationId?: string;
 }
 
-export interface FinanceAnswerResult {
+export interface SalesAnswerResult {
   answer: string;
   intent: IntentType;
-  financeIntent: FinanceIntent;
+  salesIntent: SalesIntent;
   domainIntent: string;
   crmSummary: Record<string, unknown>;
   brainFiles: string[];
   knowledgeFiles: string[];
   crmEntities: string[];
   dataFreshness?: { fetchedAt: string; cached: boolean };
-  mode: "finance_v1";
+  mode: "sales_v1";
   executionMs: number;
   rewrittenInternally: boolean;
 }
 
-function mapFinanceIntentToLegacy(intent: FinanceIntent): IntentType {
+function mapSalesIntentToLegacy(intent: SalesIntent): IntentType {
   switch (intent) {
     case "casual_chat":
       return "casual_chat";
@@ -43,35 +43,37 @@ function mapFinanceIntentToLegacy(intent: FinanceIntent): IntentType {
   }
 }
 
-export async function runFinanceAnswer(
+export async function runSalesAnswer(
   question: string,
-  _options: FinanceAnswerOptions = {}
-): Promise<FinanceAnswerResult> {
+  _options: SalesAnswerOptions = {}
+): Promise<SalesAnswerResult> {
   const started = Date.now();
   const q = question.trim();
   if (!q) throw new Error("Savol bo'sh bo'lishi mumkin emas.");
 
-  const intentInfo = analyzeFinanceIntent(q);
-  const rewritten = rewriteFinanceQuery(q);
+  const intentInfo = analyzeSalesIntent(q);
+  const rewritten = rewriteSalesQuery(q);
   const analysisQuery = rewritten.rewritten;
 
   let knowledge;
   if (intentInfo.needsKnowledge) {
-    knowledge = await retrieveFinanceChunks(analysisQuery, { topK: 6 });
+    knowledge = await retrieveSalesChunks(analysisQuery, { topK: 6 });
   } else {
-    console.log(`\n[Knowledge] agent=finance`);
-    console.log(`Retrieval: YO'Q`);
+    console.log(`\n[Knowledge]`);
+    console.log(`Agent: sales`);
+    console.log(`Used chunks.json: YO'Q`);
     console.log(`Sabab: intent knowledge chaqirmadi (${intentInfo.intent})`);
-    console.log(`Chunks:\n0\n`);
+    console.log(`Chunks:\n0`);
+    console.log(`Promptga kiritildi:\nYO'Q\n`);
   }
 
   let crm;
   let crmMissing = false;
   let toolPlan;
   if (intentInfo.needsCrm) {
-    toolPlan = planFinanceCrmTools(analysisQuery);
+    toolPlan = planSalesCrmTools(analysisQuery);
     try {
-      crm = await fetchFinanceCrmData(toolPlan.tools, toolPlan.focus);
+      crm = await fetchSalesCrmData(toolPlan.tools, toolPlan.focus);
       crmMissing = crm.empty;
     } catch {
       crmMissing = true;
@@ -81,20 +83,20 @@ export async function runFinanceAnswer(
   if (intentInfo.intent === "crm_only" && crmMissing) {
     return {
       answer: sanitizeUserOutput("Bitrix24 da bu savol bo'yicha aniq ma'lumot topilmadi."),
-      intent: mapFinanceIntentToLegacy(intentInfo.intent),
-      financeIntent: intentInfo.intent,
-      domainIntent: "finance_crm",
+      intent: mapSalesIntentToLegacy(intentInfo.intent),
+      salesIntent: intentInfo.intent,
+      domainIntent: "sales_crm",
       crmSummary: { empty: true },
       brainFiles: [],
       knowledgeFiles: [],
       crmEntities: toolPlan?.tools || [],
-      mode: "finance_v1",
+      mode: "sales_v1",
       executionMs: Date.now() - started,
       rewrittenInternally: rewritten.wasRewritten,
     };
   }
 
-  const built = buildFinanceContext({
+  const built = buildSalesContext({
     intent: intentInfo.intent,
     originalQuestion: q,
     rewritten,
@@ -103,6 +105,10 @@ export async function runFinanceAnswer(
     toolPlan,
     crmMissing,
   });
+
+  if (knowledge) {
+    console.log(`Promptga kiritildi:\n${built.knowledgeInPrompt ? "HA" : "YO'Q"}`);
+  }
 
   const { quickMaxTokens } = getEnv();
   const raw = await chatCompletion(built.systemPrompt, built.userPrompt, quickMaxTokens);
@@ -114,64 +120,60 @@ export async function runFinanceAnswer(
 
   return {
     answer,
-    intent: mapFinanceIntentToLegacy(intentInfo.intent),
-    financeIntent: intentInfo.intent,
-    domainIntent: "finance_document_crm",
+    intent: mapSalesIntentToLegacy(intentInfo.intent),
+    salesIntent: intentInfo.intent,
+    domainIntent: "sales_document_crm",
     crmSummary: {
-      financeIntent: intentInfo.intent,
+      salesIntent: intentInfo.intent,
       tools: toolPlan?.tools || [],
       focus: toolPlan?.focus || [],
       counts: crm?.counts,
       knowledgeChunks: knowledge?.usedChunkIds.length || 0,
       rewritten: rewritten.wasRewritten,
+      knowledgeInPrompt: built.knowledgeInPrompt,
     },
     brainFiles: [],
     knowledgeFiles: built.knowledgeFiles,
     crmEntities: built.crmEntities,
     dataFreshness: crm ? { fetchedAt: crm.fetchedAt, cached: false } : undefined,
-    mode: "finance_v1",
+    mode: "sales_v1",
     executionMs: Date.now() - started,
     rewrittenInternally: rewritten.wasRewritten,
   };
 }
 
-export async function* runFinanceAnswerStream(
+export async function* runSalesAnswerStream(
   question: string,
-  options: FinanceAnswerOptions = {}
+  options: SalesAnswerOptions = {}
 ): AsyncGenerator<
   | { type: "status"; message: string; phase: "bitrix" | "reasoning" | "generating" }
   | { type: "delta"; text: string }
-  | { type: "done"; answer: string; mode: "finance_v1" },
+  | { type: "done"; answer: string; mode: "sales_v1" },
   void,
   unknown
 > {
   const q = question.trim();
   if (!q) throw new Error("Savol bo'sh bo'lishi mumkin emas.");
 
-  const intentInfo = analyzeFinanceIntent(q);
-  const rewritten = rewriteFinanceQuery(q);
+  const intentInfo = analyzeSalesIntent(q);
+  const rewritten = rewriteSalesQuery(q);
   const analysisQuery = rewritten.rewritten;
 
-  yield { type: "status", message: "Moliyaviy savol tahlil qilinmoqda...", phase: "reasoning" };
+  yield { type: "status", message: "Savdo savoli tahlil qilinmoqda...", phase: "reasoning" };
 
   let knowledge;
   if (intentInfo.needsKnowledge) {
-    knowledge = await retrieveFinanceChunks(analysisQuery, { topK: 6 });
-  } else {
-    console.log(`\n[Knowledge] agent=finance`);
-    console.log(`Retrieval: YO'Q`);
-    console.log(`Sabab: intent knowledge chaqirmadi (${intentInfo.intent})`);
-    console.log(`Chunks:\n0\n`);
+    knowledge = await retrieveSalesChunks(analysisQuery, { topK: 6 });
   }
 
   let crm;
   let crmMissing = false;
   let toolPlan;
   if (intentInfo.needsCrm) {
-    yield { type: "status", message: "Bitrix24 moliyaviy ma'lumotlari yuklanmoqda...", phase: "bitrix" };
-    toolPlan = planFinanceCrmTools(analysisQuery);
+    yield { type: "status", message: "Bitrix24 savdo ma'lumotlari yuklanmoqda...", phase: "bitrix" };
+    toolPlan = planSalesCrmTools(analysisQuery);
     try {
-      crm = await fetchFinanceCrmData(toolPlan.tools, toolPlan.focus);
+      crm = await fetchSalesCrmData(toolPlan.tools, toolPlan.focus);
       crmMissing = crm.empty;
     } catch {
       crmMissing = true;
@@ -181,11 +183,11 @@ export async function* runFinanceAnswerStream(
   if (intentInfo.intent === "crm_only" && crmMissing) {
     const answer = sanitizeUserOutput("Bitrix24 da bu savol bo'yicha aniq ma'lumot topilmadi.");
     yield { type: "delta", text: answer };
-    yield { type: "done", answer, mode: "finance_v1" };
+    yield { type: "done", answer, mode: "sales_v1" };
     return;
   }
 
-  const built = buildFinanceContext({
+  const built = buildSalesContext({
     intent: intentInfo.intent,
     originalQuestion: q,
     rewritten,
@@ -195,8 +197,12 @@ export async function* runFinanceAnswerStream(
     crmMissing,
   });
 
+  if (knowledge) {
+    console.log(`Promptga kiritildi:\n${built.knowledgeInPrompt ? "HA" : "YO'Q"}`);
+  }
+
   const { quickMaxTokens } = getEnv();
-  yield { type: "status", message: "Moliyaviy javob generatsiya qilinmoqda...", phase: "generating" };
+  yield { type: "status", message: "Savdo javobi generatsiya qilinmoqda...", phase: "generating" };
 
   let raw = "";
   for await (const chunk of chatCompletionStream(built.systemPrompt, built.userPrompt, quickMaxTokens)) {
@@ -208,5 +214,5 @@ export async function* runFinanceAnswerStream(
   if (intentInfo.needsCrm && crm && !crmMissing) {
     answer = appendFreshnessToAnswer(answer, crm.fetchedAt);
   }
-  yield { type: "done", answer, mode: "finance_v1" };
+  yield { type: "done", answer, mode: "sales_v1" };
 }

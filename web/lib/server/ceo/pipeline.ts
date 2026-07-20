@@ -58,6 +58,11 @@ export async function runCeoAnswer(
   let knowledge;
   if (intentInfo.needsKnowledge) {
     knowledge = await retrieveCeoChunks(analysisQuery, { topK: 6 });
+  } else {
+    console.log(`\n[Knowledge] agent=ceo`);
+    console.log(`Retrieval: YO'Q`);
+    console.log(`Sabab: intent knowledge chaqirmadi (${intentInfo.intent})`);
+    console.log(`Chunks:\n0\n`);
   }
 
   let crm;
@@ -152,6 +157,11 @@ export async function* runCeoAnswerStream(
   let knowledge;
   if (intentInfo.needsKnowledge) {
     knowledge = await retrieveCeoChunks(analysisQuery, { topK: 6 });
+  } else {
+    console.log(`\n[Knowledge] agent=ceo`);
+    console.log(`Retrieval: YO'Q`);
+    console.log(`Sabab: intent knowledge chaqirmadi (${intentInfo.intent})`);
+    console.log(`Chunks:\n0\n`);
   }
 
   let crm;

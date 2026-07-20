@@ -59,6 +59,23 @@ export function loadKnowledgeIndex(sourceDir: string): KnowledgeIndex | null {
   }
 }
 
+export type IndexLoadStatus =
+  | { ok: true; index: KnowledgeIndex; path: string }
+  | { ok: false; path: string; reason: "index_not_found" | "chunks_json_unreadable" };
+
+export function loadKnowledgeIndexWithStatus(sourceDir: string): IndexLoadStatus {
+  const file = indexPathFor(sourceDir);
+  if (!fs.existsSync(file)) {
+    return { ok: false, path: file, reason: "index_not_found" };
+  }
+  try {
+    const index = JSON.parse(fs.readFileSync(file, "utf-8")) as KnowledgeIndex;
+    return { ok: true, index, path: file };
+  } catch {
+    return { ok: false, path: file, reason: "chunks_json_unreadable" };
+  }
+}
+
 export async function ensureKnowledgeIndex(options: {
   agentId: string;
   sourceDir: string;

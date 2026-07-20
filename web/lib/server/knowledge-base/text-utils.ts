@@ -16,6 +16,12 @@ export function inferTopicFromFileName(fileName: string): { topic: string; docum
   const lower = base.toLowerCase();
 
   const map: Array<{ match: RegExp; topic: string; documentType: string }> = [
+    { match: /aq-06_1/, topic: "savdo_analitika_asoslar", documentType: "sales_playbook" },
+    { match: /aq-06_2/, topic: "savdo_jarayon_kpi", documentType: "sales_playbook" },
+    { match: /aq-06_3/, topic: "savdo_konversiya_pipeline", documentType: "sales_playbook" },
+    { match: /aq-06_4/, topic: "savdo_menejer_hisobot", documentType: "sales_playbook" },
+    { match: /aq-06_5/, topic: "savdo_tavsiya_risk", documentType: "sales_playbook" },
+    { match: /aq-06|biznes_analitika|savdo_direktori|aq-01/, topic: "savdo_amaliy_qollanma", documentType: "sales_playbook" },
     { match: /aq-03_1/, topic: "moliya_nazorat_qoidalari", documentType: "finance_playbook" },
     { match: /aq-03_2/, topic: "moliya_tushum_xarajat", documentType: "finance_playbook" },
     { match: /aq-03_3/, topic: "moliya_debitor_pul_oqimi", documentType: "finance_playbook" },
